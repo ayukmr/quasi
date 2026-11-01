@@ -1,7 +1,7 @@
 use quasi::{Agent, Renderer};
 
+use std::{env, thread};
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -21,18 +21,33 @@ fn main() -> Result<()> {
     });
 
     let mut rl = DefaultEditor::new()?;
-    let mut agent = Agent::new(renderer.clone())?;
+
+    let mut agent = if let Some(name) = env::args().nth(1) {
+        Agent::load(renderer.clone(), &name)
+    } else {
+        Agent::new(renderer.clone())
+    }?;
 
     loop {
+        renderer.lock().unwrap().write_line("");
         renderer.lock().unwrap().flush();
 
-        let readline = rl.readline("\x1b[35m> \x1b[0m");
+        let readline = rl.readline("\x1b[35m>\x1b[0m ");
         match readline {
-            Ok(prompt) => agent.prompt(&prompt)?,
+            Ok(prompt) => {
+                if prompt.is_empty() {
+                    continue;
+                }
+
+                if let Some(name) = prompt.strip_prefix("/save ") {
+                    agent.save(name)?;
+                    renderer.lock().unwrap().write_success(&format!("saved to {name}"));
+                } else {
+                    agent.prompt(&prompt)?;
+                }
+            },
             _ => break,
         }
-
-        renderer.lock().unwrap().write_line("");
     }
 
     Ok(())

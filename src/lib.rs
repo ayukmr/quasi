@@ -1,3 +1,4 @@
+mod utils;
 mod oauth;
 mod sse;
 mod tools;

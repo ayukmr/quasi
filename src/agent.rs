@@ -1,11 +1,14 @@
+use crate::{render, utils};
 use crate::oauth::Credentials;
 use crate::render::Renderer;
 use crate::sse::{self, Body, Content, Message, Role, StopReason};
 use crate::tools::{self, Tool};
 
+use std::fs;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
 
 const SYSTEM: &str = "You are quasi (`qsi`), an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
@@ -29,32 +32,108 @@ Guidelines:
 - Show file paths clearly when working with files";
 
 pub struct Agent {
+    model: String,
     renderer: Arc<Mutex<Renderer>>,
     creds: Credentials,
     tools: Vec<Tool>,
+    system: Vec<Content>,
+    messages: Vec<Message>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct AgentSave {
+    model: String,
+    system: Vec<Content>,
     messages: Vec<Message>,
 }
 
 impl Agent {
     pub fn new(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
-        let cln = renderer.clone();
         Ok(Self {
-            renderer,
-            creds: Credentials::get(cln)?,
-            tools: tools::tools(),
-            messages: Vec::new(),
-        })
-    }
-
-    fn body(&self) -> Body {
-        Body {
             model: "claude-sonnet-5-5".to_string(),
-            max_tokens: 32_768,
-            stream: true,
+            renderer: renderer.clone(),
+            creds: Credentials::get(renderer)?,
+            tools: tools::tools(),
             system: vec![
                 Content::Text { text: "You are Claude Code, Anthropic's official CLI for Claude.".to_string(), cache_control: None },
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
             ],
+            messages: Vec::new(),
+        })
+    }
+
+    pub fn load(renderer: Arc<Mutex<Renderer>>, name: &str) -> Result<Self> {
+        let file = utils::convo_dir()?.join(format!("{name}.json"));
+        let json = fs::read_to_string(file)?;
+        let save: AgentSave = serde_json::from_str(&json)?;
+
+        for msg in &save.messages {
+            for cont in &msg.content {
+                match cont {
+                    Content::Text { text, .. } => {
+                        match msg.role {
+                            Role::User => {
+                                println!("\n\x1b[35m>\x1b[0m {text}");
+                            }
+                            Role::Assistant => {
+                                let mut pretty = String::new();
+                                bat::PrettyPrinter::new()
+                                    .input_from_bytes(text.as_bytes())
+                                    .language("markdown")
+                                    .theme("base16")
+                                    .colored_output(true)
+                                    .print_with_writer(Some(&mut pretty))
+                                    .unwrap();
+
+                                println!("{}", render::with_bg(&pretty));
+                            }
+                            _ => {}
+                        }
+                    }
+                    Content::ToolUse { name, input, .. } => {
+                        println!(
+                            "\x1b[1m+ {name}({})\x1b[0m",
+                            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(Self {
+            model: save.model,
+            renderer: renderer.clone(),
+            creds: Credentials::get(renderer)?,
+            tools: tools::tools(),
+            system: save.system,
+            messages: save.messages,
+        })
+    }
+
+    pub fn save(&self, name: &str) -> Result<()> {
+        let save = AgentSave {
+            model: self.model.clone(),
+            system: self.system.clone(),
+            messages: self.messages.clone(),
+        };
+
+        let file = format!("{name}.json");
+        let json = serde_json::to_string_pretty(&save)?;
+
+        let dir = utils::convo_dir()?;
+        fs::create_dir_all(&dir)?;
+        fs::write(dir.join(file), json)?;
+
+        Ok(())
+    }
+
+    fn body(&self) -> Body {
+        Body {
+            model: self.model.clone(),
+            max_tokens: 32_768,
+            stream: true,
+            system: self.system.clone(),
             tools: self.tools.iter().map(Tool::to_json).collect(),
             messages: self.messages.clone(),
         }

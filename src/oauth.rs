@@ -1,7 +1,7 @@
+use crate::utils;
 use crate::render::Renderer;
 
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -55,14 +55,9 @@ impl PKCE {
     }
 }
 
-fn config_dir() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("$HOME not set")?;
-    Ok(PathBuf::from(home).join(".config/quasi"))
-}
-
 impl Credentials {
     pub fn get(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
-        let mut creds = Self::from_save().or_else(|_| Self::from_login(renderer.clone()))?;
+        let mut creds = Self::load().or_else(|_| Self::from_login(renderer.clone()))?;
 
         if creds.expires < SystemTime::now() {
             creds.refresh(renderer)?;
@@ -72,8 +67,8 @@ impl Credentials {
         Ok(creds)
     }
 
-    fn from_save() -> Result<Self> {
-        let file = config_dir()?.join("creds.json");
+    fn load() -> Result<Self> {
+        let file = utils::config_dir()?.join("creds.json");
         let json = fs::read_to_string(file)?;
         let creds = serde_json::from_str(&json)?;
 
@@ -81,9 +76,11 @@ impl Credentials {
     }
 
     fn save(&self) -> Result<()> {
-        let dir = config_dir()?;
+        let json = serde_json::to_string_pretty(self)?;
+
+        let dir = utils::config_dir()?;
         fs::create_dir_all(&dir)?;
-        fs::write(dir.join("creds.json"), serde_json::to_string(self)?)?;
+        fs::write(dir.join("creds.json"), json)?;
 
         Ok(())
     }
@@ -153,7 +150,7 @@ impl Credentials {
         let _ = creds.save();
 
         renderer.lock().unwrap().set_status(None);
-        renderer.lock().unwrap().write_line("registered token \x1b[32m✓\x1b[0m");
+        renderer.lock().unwrap().write_success("registered token");
 
         Ok(creds)
     }
@@ -177,7 +174,7 @@ impl Credentials {
         *self = Self::from_api(json)?;
 
         renderer.lock().unwrap().set_status(None);
-        renderer.lock().unwrap().write_line("refreshed token \x1b[32m✓\x1b[0m");
+        renderer.lock().unwrap().write_line("refreshed token");
 
         Ok(())
     }

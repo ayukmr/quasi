@@ -16,7 +16,7 @@ fn cols() -> usize {
 
 const BG: &str = "\x1b[40m";
 
-fn with_bg(s: &str) -> String {
+pub fn with_bg(s: &str) -> String {
     s.lines()
         .map(|l| {
             format!(
@@ -78,9 +78,13 @@ impl Renderer {
         }
     }
 
-    pub fn write_line(&mut self, p: &str) {
-        self.queue += &format!("{p}\n");
+    pub fn write_line(&mut self, s: &str) {
+        self.queue += &format!("{s}\n");
         self.last.clear();
+    }
+
+    pub fn write_success(&mut self, s: &str) {
+        self.write_line(&format!("{s} \x1b[32m✓\x1b[0m"));
     }
 
     const SPIN_FRAMES: &[&str] = &["⠎⠀", "⠊⠁", "⠈⠑", "⠀⠱", "⠀⡰", "⢀⡠", "⢄⡀", "⢆⠀"];
