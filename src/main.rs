@@ -1,40 +1,38 @@
+use quasi::{Agent, Renderer};
+
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use anyhow::Result;
-use quasi::agent::Agent;
-use quasi::render::Renderer;
 use rustyline::DefaultEditor;
 
+const TICK: Duration = Duration::from_millis(30);
+
 fn main() -> Result<()> {
-    let rnd1 = Arc::new(Mutex::new(Renderer::new()));
-    let rnd2 = rnd1.clone();
-    let rnd3 = rnd1.clone();
+    let renderer = Arc::new(Mutex::new(Renderer::new()));
+    let renderer_cln = renderer.clone();
 
     thread::spawn(move || {
         loop {
-            rnd2.lock().unwrap().tick();
-            thread::sleep(Duration::from_millis(50));
+            renderer_cln.lock().unwrap().tick();
+            thread::sleep(TICK);
         }
     });
 
     let mut rl = DefaultEditor::new()?;
-    let mut agent = Agent::new(rnd3)?;
+    let mut agent = Agent::new(renderer.clone())?;
 
     loop {
-        rnd1.lock().unwrap().divider();
-
-        let start = rnd1.lock().unwrap().t;
-        while rnd1.lock().unwrap().t == start {
-            thread::sleep(Duration::from_millis(10));
-        }
+        renderer.lock().unwrap().flush();
 
         let readline = rl.readline("\x1b[35m> \x1b[0m");
         match readline {
             Ok(prompt) => agent.prompt(&prompt)?,
             _ => break,
         }
+
+        renderer.lock().unwrap().write_line("");
     }
 
     Ok(())

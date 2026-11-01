@@ -1,13 +1,13 @@
-use std::sync::{Arc, Mutex};
-
-use anyhow::{Context, Result};
-
 use crate::oauth::Credentials;
 use crate::render::Renderer;
 use crate::sse::{self, Body, Content, Message, Role, StopReason};
 use crate::tools::{self, Tool};
 
-const SYSTEM: &str = "You are an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
+use std::sync::{Arc, Mutex};
+
+use anyhow::{Context, Result};
+
+const SYSTEM: &str = "You are quasi (`qsi`), an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
 - read: Read file contents
@@ -19,12 +19,13 @@ Guidelines:
 - Use read to examine files before editing
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
-- Use bash for file operations like ls, grep, find
+- Use bash for file operations like ls, rg (ripgrep), find
 - Do not use bash when another tool would work
 - Bash is sandboxed for file writing, do not try to get around it
 - Do not be too eager with writing files - ask the user if it is implied but not said
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses, do not state multiple solutions unless asked
+- Never include emojis in your responses, unless explicitly asked
 - Show file paths clearly when working with files";
 
 pub struct Agent {
@@ -36,9 +37,10 @@ pub struct Agent {
 
 impl Agent {
     pub fn new(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
+        let cln = renderer.clone();
         Ok(Self {
             renderer,
-            creds: Credentials::get()?,
+            creds: Credentials::get(cln)?,
             tools: tools::tools(),
             messages: Vec::new(),
         })
@@ -66,7 +68,7 @@ impl Agent {
             }
         );
 
-        let mut resp = sse::req(&self.body(), &self.creds, self.renderer.clone())?;
+        let mut resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
 
         loop {
             if !matches!(resp.stop_reason, StopReason::ToolUse) {
@@ -114,7 +116,7 @@ impl Agent {
             self.messages.push(Message { role: Role::Assistant, content: resp.content });
             self.messages.push(Message { role: Role::User, content: tool_res });
 
-            resp = sse::req(&self.body(), &self.creds, self.renderer.clone())?;
+            resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
         }
 
         self.messages.push(Message { role: Role::Assistant, content: resp.content });

@@ -6,10 +6,10 @@ use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
 pub struct Tool {
-    pub name: String,
-    pub description: String,
-    pub params: Vec<(String, String, String)>,
-    pub required: Vec<String>,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub params: Vec<(&'static str, &'static str, &'static str)>,
+    pub required: Vec<&'static str>,
     pub dangerous: bool,
     pub call: fn(HashMap<String, Value>) -> Result<String>,
 }
@@ -34,55 +34,55 @@ impl Tool {
 pub fn tools() -> Vec<Tool> {
     vec![
         Tool {
-            name: "read".to_string(),
-            description: "Read the contents of a file. For text files, defaults to first 2000 lines. Use offset/limit for large files.".to_string(),
+            name: "read",
+            description: "Read the contents of a file. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
             params: vec![
-                ("path".to_string(), "string".to_string(), "Path to the file to read (relative or absolute)".to_string()),
-                ("offset".to_string(), "number".to_string(), "Line number to start reading from (1-indexed)".to_string()),
-                ("limit".to_string(), "number".to_string(), "Maximum number of lines to read".to_string()),
+                ("path", "string", "Path to the file to read (relative or absolute)"),
+                ("offset", "number", "Line number to start reading from (1-indexed)"),
+                ("limit", "number", "Maximum number of lines to read"),
             ],
-            required: vec!["path".to_string()],
+            required: vec!["path"],
             dangerous: false,
             call: read,
         },
         Tool {
-            name: "write".to_string(),
-            description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.".to_string(),
+            name: "write",
+            description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
             params: vec![
-                ("path".to_string(), "string".to_string(), "Path to the file to write (relative or absolute)".to_string()),
-                ("content".to_string(), "string".to_string(), "Content to write to the file".to_string()),
+                ("path", "string", "Path to the file to write (relative or absolute)"),
+                ("content", "string", "Content to write to the file"),
             ],
-            required: vec!["path".to_string(), "content".to_string()],
+            required: vec!["path", "content"],
             dangerous: true,
             call: write,
         },
         Tool {
-            name: "edit".to_string(),
-            description: "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.".to_string(),
+            name: "edit",
+            description: "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
             params: vec![
-                ("path".to_string(), "string".to_string(), "Path to the file to edit (relative or absolute)".to_string()),
-                ("old_text".to_string(), "string".to_string(), "Exact text to find and replace (must match exactly)".to_string()),
-                ("new_text".to_string(), "string".to_string(), "New text to replace the old text with".to_string()),
+                ("path", "string", "Path to the file to edit (relative or absolute)"),
+                ("old_text", "string", "Exact text to find and replace (must match exactly)"),
+                ("new_text", "string", "New text to replace the old text with"),
             ],
-            required: vec!["path".to_string(), "old_text".to_string(), "new_text".to_string()],
+            required: vec!["path", "old_text", "new_text"],
             dangerous: true,
             call: edit,
         },
         Tool {
-            name: "bash".to_string(),
-            description: "Execute a bash command in the current working directory. Returns stdout and stderr. Optionally provide a timeout in seconds.".to_string(),
+            name: "bash",
+            description: "Execute a bash command in the current working directory. Returns stdout and stderr. Optionally provide a timeout in seconds.",
             params: vec![
-                ("command".to_string(), "string".to_string(), "Bash command to execute".to_string()),
-                ("timeout".to_string(), "number".to_string(), "Timeout in seconds (optional, no default timeout)".to_string()),
+                ("command", "string", "Bash command to execute"),
+                ("timeout", "number", "Timeout in seconds (optional, no default timeout)"),
             ],
-            required: vec!["command".to_string()],
+            required: vec!["command"],
             dangerous: false,
             call: bash,
         },
     ]
 }
 
-pub fn read(args: HashMap<String, Value>) -> Result<String> {
+fn read(args: HashMap<String, Value>) -> Result<String> {
     let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
     let offset = args.get("offset").map(|o| o.as_u64().context("offset: wrong type")).transpose()?.unwrap_or(1) as usize;
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?.unwrap_or(2000) as usize;
@@ -94,7 +94,7 @@ pub fn read(args: HashMap<String, Value>) -> Result<String> {
     Ok(out.join("\n"))
 }
 
-pub fn write(args: HashMap<String, Value>) -> Result<String> {
+fn write(args: HashMap<String, Value>) -> Result<String> {
     let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
     let content = args.get("content").context("content: omitted")?.as_str().context("content: wrong type")?;
 
@@ -103,7 +103,7 @@ pub fn write(args: HashMap<String, Value>) -> Result<String> {
     Ok(format!("successfully wrote to {path}"))
 }
 
-pub fn edit(args: HashMap<String, Value>) -> Result<String> {
+fn edit(args: HashMap<String, Value>) -> Result<String> {
     let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
     let old = args.get("old_text").context("old_text: omitted")?.as_str().context("old_text: wrong type")?;
     let new = args.get("new_text").context("new_text: omitted")?.as_str().context("new_text: wrong type")?;
@@ -120,8 +120,7 @@ pub fn edit(args: HashMap<String, Value>) -> Result<String> {
     Ok(format!("successfully replaced text in {path}"))
 }
 
-const SANDBOX: &str = r#"
-(version 1)
+const SANDBOX: &str = r#"(version 1)
 (allow default)
 
 (deny file-write*)
@@ -131,11 +130,10 @@ const SANDBOX: &str = r#"
   (literal "/dev/zero")
   (literal "/dev/dtracehelper")
   (regex #"^/dev/tty")
-  (regex #"^/dev/fd/"))
-"#;
+  (regex #"^/dev/fd/"))"#;
 
 // TODO use timeout
-pub fn bash(args: HashMap<String, Value>) -> Result<String> {
+fn bash(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
     let timeout = args.get("timeout").map(|o| o.as_u64().context("timeout: wrong type")).transpose()?.unwrap_or(1) as usize;
 

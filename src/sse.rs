@@ -1,9 +1,9 @@
+use crate::oauth::Credentials;
+use crate::render::Renderer;
+
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
-
-use crate::oauth::Credentials;
-use crate::render::Renderer;
 
 use anyhow::{Result, bail};
 use minreq::{Request, ResponseLazy};
@@ -20,6 +20,27 @@ pub struct Body {
     pub system: Vec<Content>,
     pub tools: Value,
     pub messages: Vec<Message>,
+}
+
+impl Body {
+    pub fn add_cache(mut self) -> Self {
+        for msg in self.messages.iter_mut().rev() {
+            if matches!(msg.role, Role::User) {
+                let Some(last) = msg.content.last_mut() else {
+                    continue;
+                };
+
+                match last {
+                    Content::Text { cache_control, .. } | Content::ToolResult { cache_control, .. } => {
+                        *cache_control = Some(CacheControl { kind: "ephemeral".to_string() });
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -65,25 +86,9 @@ pub struct CacheControl {
 }
 
 pub fn req(body: &Body, creds: &Credentials, renderer: Arc<Mutex<Renderer>>) -> Result<Response> {
-    renderer.lock().unwrap().write_line("—————");
+    let json = serde_json::to_string(body)?;
 
-    let mut body_cln = body.clone();
-
-    for msg in body_cln.messages.iter_mut().rev() {
-        if matches!(msg.role, Role::User) {
-            match msg.content.last_mut().unwrap() {
-                Content::Text { cache_control, .. } | Content::ToolResult { cache_control, .. } => {
-                    *cache_control = Some(CacheControl { kind: "ephemeral".to_string() });
-                    break;
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let json = serde_json::to_string(&body_cln)?;
-
-    renderer.lock().unwrap().set_status(Some("contacting".to_string()));
+    renderer.lock().unwrap().set_status(Some("contacting"));
 
     let resp = add_headers(minreq::post(API_URL), creds)
         .with_body(json)
@@ -195,7 +200,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                     Content::Thinking { .. } | Content::RedactedThinking { .. } => "pondering",
                     Content::ToolUse { .. } => "drafting",
                     _ => "futzing",
-                }.to_string();
+                };
                 renderer.lock().unwrap().set_status(Some(stat));
 
                 cur = Some(content_block);
@@ -208,16 +213,16 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                         if let Some(Content::Text { text, .. }) = cur.as_mut() {
                             text.push_str(&delta);
 
-                            let mut p = String::new();
+                            let mut full = String::new();
                             bat::PrettyPrinter::new()
                                 .input_from_bytes(text.as_bytes())
                                 .language("markdown")
                                 .theme("base16")
                                 .colored_output(true)
-                                .print_with_writer(Some(&mut p))
+                                .print_with_writer(Some(&mut full))
                                 .unwrap();
 
-                            renderer.lock().unwrap().write_pretty(&delta, &p);
+                            renderer.lock().unwrap().write_pretty(&delta, &full.trim());
                         }
                     }
                     ContentDelta::ThinkingDelta { delta } => {

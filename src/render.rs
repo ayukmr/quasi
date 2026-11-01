@@ -1,9 +1,9 @@
 use std::io::{self, Write};
 
 pub struct Renderer {
-    pub t: usize,
+    t: usize,
     status: Option<String>,
-    was_active: bool,
+    fresh: bool,
     last: String,
     queue: String,
 }
@@ -14,9 +14,23 @@ fn cols() -> usize {
         .unwrap_or(80)
 }
 
+const BG: &str = "\x1b[40m";
+
+fn with_bg(s: &str) -> String {
+    s.lines()
+        .map(|l| {
+            format!(
+                "{BG}{}\x1b[K\x1b[0m",
+                l.replace("\x1b[0m", &format!("\x1b[0m{BG}")),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn rows(s: &str) -> usize {
     let cols = cols();
-    s.len().max(1).div_ceil(cols)
+    s.chars().count().max(1).div_ceil(cols)
 }
 
 impl Renderer {
@@ -24,54 +38,38 @@ impl Renderer {
         Self {
             t: 0,
             status: None,
-            was_active: false,
+            fresh: false,
             last: "".to_string(),
             queue: "".to_string(),
         }
     }
 
-    pub fn set_status(&mut self, status: Option<String>) {
-        match (&status, self.was_active) {
+    pub fn set_status(&mut self, status: Option<&str>) {
+        match (status, self.status.is_some()) {
             (Some(_), false) => {
-                self.queue += "\n";
-                self.was_active = true;
+                self.fresh = true;
             }
             (None, true) => {
-                self.queue += "\r\x1b[J\x1b[1A\r";
-                self.was_active = false;
+                self.queue += if self.fresh { "\r\x1b[J" } else { "\r\x1b[J\x1b[1A\r" };
             }
             _ => {}
         }
 
-        self.status = status;
+        self.status = status.map(|s| s.to_string());
     }
 
-    // pub fn write(&mut self, s: &str) {
-    //     if self.was_active {
-    //         let up = rows(&self.last);
-    //         self.last += s;
-    //         self.queue += &format!("\x1b[{up}A\r\x1b[J{}\n", self.last);
-    //     } else {
-    //         self.last += s;
-    //         self.queue += s;
-    //     }
-
-    //     if let Some((_, rest)) = self.last.rsplit_once('\n') {
-    //         self.last = rest.to_string();
-    //     }
-    // }
-
-    pub fn write_pretty(&mut self, s: &str, p: &str) {
+    pub fn write_pretty(&mut self, delta: &str, full: &str) {
         let up = rows(&self.last);
-        self.last += s;
+        self.last += delta;
 
         let nls = self.last.matches('\n').count();
-        let start = p.rmatch_indices('\n').nth(nls).map(|(i, _)| i + 1).unwrap_or(0);
-        let tail = &p[start..];
+        let start = full.rmatch_indices('\n').nth(nls).map(|(i, _)| i + 1).unwrap_or(0);
+        let tail = with_bg(&full[start..]);
 
-        if self.was_active {
+        if self.status.is_some() && !self.fresh {
             self.queue += &format!("\x1b[{up}A");
         }
+        self.fresh = false;
 
         self.queue += &format!("\r\x1b[J{tail}\n");
 
@@ -87,24 +85,30 @@ impl Renderer {
 
     const SPIN_FRAMES: &[&str] = &["⠎⠀", "⠊⠁", "⠈⠑", "⠀⠱", "⠀⡰", "⢀⡠", "⢄⡀", "⢆⠀"];
 
-    pub fn tick(&mut self) {
+    pub fn flush(&mut self) {
         print!("{}", self.queue);
         self.queue.clear();
         io::stdout().flush().ok();
+    }
 
-        self.t = (self.t + 1) % Self::SPIN_FRAMES.len();
+    pub fn tick(&mut self) {
+        self.flush();
 
         let Some(status) = &self.status else {
             return
         };
 
-        print!("\r\x1b[2K\x1b[35m{}\x1b[0m {status}...", Self::SPIN_FRAMES[self.t]);
+        self.t = (self.t + 1) % (Self::SPIN_FRAMES.len() * 2);
+
+        print!("\r\x1b[2K\x1b[35m{}\x1b[0m {status}...", Self::SPIN_FRAMES[self.t / 2]);
         io::stdout().flush().ok();
     }
 
     pub fn confirm(&mut self) -> bool {
+        self.flush();
+
         loop {
-            self.queue += "\x1b[31mallow?> \x1b[0m";
+            print!("\x1b[31mallow?> \x1b[0m");
             io::stdout().flush().ok();
 
             let mut ans = String::new();
@@ -124,9 +128,5 @@ impl Renderer {
             self.queue += "\n";
             self.last.clear();
         }
-    }
-
-    pub fn divider(&mut self) {
-        self.queue += &format!("{}\n", "—".repeat(cols()));
     }
 }

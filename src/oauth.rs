@@ -1,6 +1,9 @@
+use crate::render::Renderer;
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
@@ -22,8 +25,8 @@ const REDIRECT_PATH: &str = "/callback";
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Credentials {
     pub access: String,
-    pub refresh: String,
-    pub expires: SystemTime,
+    refresh: String,
+    expires: SystemTime,
 }
 
 #[derive(Deserialize)]
@@ -58,11 +61,18 @@ fn config_dir() -> Result<PathBuf> {
 }
 
 impl Credentials {
-    pub fn get() -> Result<Self> {
-        Self::from_save().or_else(|_| Self::from_login())
+    pub fn get(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
+        let mut creds = Self::from_save().or_else(|_| Self::from_login(renderer.clone()))?;
+
+        if creds.expires < SystemTime::now() {
+            creds.refresh(renderer)?;
+            let _ = creds.save();
+        }
+
+        Ok(creds)
     }
 
-    pub fn from_save() -> Result<Self> {
+    fn from_save() -> Result<Self> {
         let file = config_dir()?.join("creds.json");
         let json = fs::read_to_string(file)?;
         let creds = serde_json::from_str(&json)?;
@@ -70,7 +80,7 @@ impl Credentials {
         Ok(creds)
     }
 
-    pub fn save(&self) -> Result<()> {
+    fn save(&self) -> Result<()> {
         let dir = config_dir()?;
         fs::create_dir_all(&dir)?;
         fs::write(dir.join("creds.json"), serde_json::to_string(self)?)?;
@@ -78,7 +88,7 @@ impl Credentials {
         Ok(())
     }
 
-    pub fn from_login() -> Result<Self> {
+    fn from_login(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
         let redirect_url = format!("{REDIRECT_HOST}{REDIRECT_PATH}");
         let pkce = PKCE::generate();
 
@@ -103,7 +113,9 @@ impl Credentials {
 
         let auth_url = format!("{AUTHORIZE_URL}?{query}");
 
-        println!("opening browser, or go to {auth_url}");
+        renderer.lock().unwrap().write_line(&format!("opening browser, or go to {auth_url}"));
+        renderer.lock().unwrap().set_status(Some("waiting on auth"));
+
         let _ = Command::new("open").arg(&auth_url).status();
 
         let code = loop {
@@ -129,7 +141,7 @@ impl Credentials {
                 if code.is_none() || state != Some(pkce.state.clone()) {
                     bail!("query params mismatch");
                 }
-                req.respond(tiny_http::Response::from_string("registered with quasi."))?;
+                req.respond(tiny_http::Response::from_string("registered with quasi ✓"))?;
 
                 break code;
             }
@@ -139,10 +151,16 @@ impl Credentials {
 
         let creds = Self::from_auth_code(&code.unwrap(), &pkce)?;
         let _ = creds.save();
+
+        renderer.lock().unwrap().set_status(None);
+        renderer.lock().unwrap().write_line("registered token \x1b[32m✓\x1b[0m");
+
         Ok(creds)
     }
 
-    pub fn refresh(&mut self) -> Result<()> {
+    fn refresh(&mut self, renderer: Arc<Mutex<Renderer>>) -> Result<()> {
+        renderer.lock().unwrap().set_status(Some("refreshing token"));
+
         let body = json!({
             "grant_type": "refresh_token",
             "client_id": CLIENT_ID,
@@ -157,6 +175,10 @@ impl Credentials {
 
         let json = resp.as_str()?;
         *self = Self::from_api(json)?;
+
+        renderer.lock().unwrap().set_status(None);
+        renderer.lock().unwrap().write_line("refreshed token \x1b[32m✓\x1b[0m");
+
         Ok(())
     }
 
