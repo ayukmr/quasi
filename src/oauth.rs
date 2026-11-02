@@ -174,7 +174,7 @@ impl Credentials {
         *self = Self::from_api(json)?;
 
         renderer.lock().unwrap().set_status(None);
-        renderer.lock().unwrap().write_line("refreshed token");
+        renderer.lock().unwrap().write_success("refreshed token");
 
         Ok(())
     }

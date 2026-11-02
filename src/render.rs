@@ -87,6 +87,10 @@ impl Renderer {
         self.write_line(&format!("{s} \x1b[32m✓\x1b[0m"));
     }
 
+    pub fn write_error(&mut self, s: &str) {
+        self.write_line(&format!("{s} \x1b[31m✗\x1b[0m"));
+    }
+
     const SPIN_FRAMES: &[&str] = &["⠎⠀", "⠊⠁", "⠈⠑", "⠀⠱", "⠀⡰", "⢀⡠", "⢄⡀", "⢆⠀"];
 
     pub fn flush(&mut self) {

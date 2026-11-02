@@ -32,7 +32,7 @@ Guidelines:
 - Show file paths clearly when working with files";
 
 pub struct Agent {
-    model: String,
+    pub model: String,
     renderer: Arc<Mutex<Renderer>>,
     creds: Credentials,
     tools: Vec<Tool>,
@@ -50,7 +50,7 @@ pub struct AgentSave {
 impl Agent {
     pub fn new(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
         Ok(Self {
-            model: "claude-sonnet-5-5".to_string(),
+            model: "sonnet-5-5".to_string(),
             renderer: renderer.clone(),
             creds: Credentials::get(renderer)?,
             tools: tools::tools(),
@@ -130,7 +130,7 @@ impl Agent {
 
     fn body(&self) -> Body {
         Body {
-            model: self.model.clone(),
+            model: format!("claude-{}", self.model),
             max_tokens: 32_768,
             stream: true,
             system: self.system.clone(),

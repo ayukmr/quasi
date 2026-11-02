@@ -8,6 +8,7 @@ use anyhow::Result;
 use rustyline::DefaultEditor;
 
 const TICK: Duration = Duration::from_millis(30);
+const MODELS: &[&str] = &["fable-5-1", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
 
 fn main() -> Result<()> {
     let renderer = Arc::new(Mutex::new(Renderer::new()));
@@ -32,7 +33,7 @@ fn main() -> Result<()> {
         renderer.lock().unwrap().write_line("");
         renderer.lock().unwrap().flush();
 
-        let readline = rl.readline("\x1b[35m>\x1b[0m ");
+        let readline = rl.readline(&format!("\x1b[35m{}>\x1b[0m ", agent.model));
         match readline {
             Ok(prompt) => {
                 if prompt.is_empty() {
@@ -42,6 +43,15 @@ fn main() -> Result<()> {
                 if let Some(name) = prompt.strip_prefix("/save ") {
                     agent.save(name)?;
                     renderer.lock().unwrap().write_success(&format!("saved to {name}"));
+                } else if let Some(model) = prompt.strip_prefix("/model ") {
+                    if MODELS.contains(&model) {
+                        agent.model = model.to_string();
+                        renderer.lock().unwrap().write_success(&format!("changed to {model}"));
+                    } else {
+                        renderer.lock().unwrap().write_error(&format!("invalid model {model}"));
+                    }
+                } else if prompt.starts_with("/") {
+                    renderer.lock().unwrap().write_error(&format!("invalid command {prompt}"));
                 } else {
                     agent.prompt(&prompt)?;
                 }
