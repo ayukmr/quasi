@@ -18,6 +18,7 @@ const CMDS: &[(&str, Option<&[&str]>)] = &[
     ("/model", Some(MODELS)),
     ("/think", Some(THINKS)),
     ("/yolo", None),
+    ("/reload", None),
 ];
 
 #[derive(Helper, Hinter, Highlighter, Validator)]
@@ -108,6 +109,9 @@ fn main() -> Result<()> {
                     } else {
                         renderer.lock().unwrap().write_error("yolo disabled");
                     }
+                } else if prompt == "/reload" {
+                    agent.reload()?;
+                    renderer.lock().unwrap().write_success("reloaded tools");
                 } else {
                     agent.prompt(&prompt)?;
                 }

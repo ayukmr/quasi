@@ -144,6 +144,11 @@ impl Agent {
         Ok(())
     }
 
+    pub fn reload(&mut self) -> Result<()> {
+        self.tools = tools::tools()?;
+        Ok(())
+    }
+
     fn body(&self) -> Body {
         Body {
             model: format!("claude-{}", self.model),
