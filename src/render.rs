@@ -8,22 +8,40 @@ pub struct Renderer {
     queue: String,
 }
 
+pub fn format(text: &str) -> String {
+    let mut syn = String::new();
+    bat::PrettyPrinter::new()
+        .input_from_bytes(text.as_bytes())
+        .language("markdown")
+        .theme("base16")
+        .colored_output(true)
+        .print_with_writer(Some(&mut syn))
+        .unwrap();
+
+    with_bg(&syn)
+}
+
 fn cols() -> usize {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
 }
 
-const BG: &str = "\x1b[40m";
-
 pub fn with_bg(s: &str) -> String {
-    s.lines()
+    s.split('\n')
         .map(|l| {
             format!(
-                "{BG}{}\x1b[K\x1b[0m",
-                l.replace("\x1b[0m", &format!("\x1b[0m{BG}")),
+                "\x1b[40m{}\x1b[K\x1b[0m",
+                l.replace("\x1b[0m", "\x1b[0m\x1b[40m"),
             )
         })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn dimmed(s: &str) -> String {
+    s.split('\n')
+        .map(|l| format!("\x1b[2m{l}\x1b[0m"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -58,13 +76,29 @@ impl Renderer {
         self.status = status.map(|s| s.to_string());
     }
 
+    pub fn write_plain(&mut self, delta: &str) {
+        let up = rows(&self.last);
+        self.last += delta;
+
+        if self.status.is_some() && !self.fresh {
+            self.queue += &format!("\x1b[{up}A");
+        }
+        self.fresh = false;
+
+        self.queue += &format!("\r\x1b[J{}\n", dimmed(&self.last));
+
+        if let Some((_, rest)) = self.last.rsplit_once('\n') {
+            self.last = rest.to_string();
+        }
+    }
+
     pub fn write_pretty(&mut self, delta: &str, full: &str) {
         let up = rows(&self.last);
         self.last += delta;
 
         let nls = self.last.matches('\n').count();
         let start = full.rmatch_indices('\n').nth(nls).map(|(i, _)| i + 1).unwrap_or(0);
-        let tail = with_bg(&full[start..]);
+        let tail = &full[start..];
 
         if self.status.is_some() && !self.fresh {
             self.queue += &format!("\x1b[{up}A");
@@ -103,7 +137,7 @@ impl Renderer {
         self.flush();
 
         let Some(status) = &self.status else {
-            return
+            return;
         };
 
         self.t = (self.t + 1) % (Self::SPIN_FRAMES.len() * 2);
@@ -132,9 +166,7 @@ impl Renderer {
     }
 
     pub fn finish(&mut self) {
-        if !self.last.is_empty() {
-            self.queue += "\n";
-            self.last.clear();
-        }
+        self.queue += "\n";
+        self.last.clear();
     }
 }

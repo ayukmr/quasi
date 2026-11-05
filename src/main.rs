@@ -1,14 +1,57 @@
 use quasi::{Agent, Renderer};
+use rustyline::completion::{Completer, Pair};
 
 use std::{env, thread};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use rustyline::DefaultEditor;
+use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Result as RResult, Validator};
 
 const TICK: Duration = Duration::from_millis(30);
+
 const MODELS: &[&str] = &["fable-5-1", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
+const THINKS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+const CMDS: &[(&str, Option<&[&str]>)] = &[
+    ("/save", None),
+    ("/model", Some(MODELS)),
+    ("/think", Some(THINKS)),
+    ("/yolo", None),
+];
+
+#[derive(Helper, Hinter, Highlighter, Validator)]
+struct Complete;
+
+impl Completer for Complete {
+    type Candidate = Pair;
+
+    fn complete(&self, line: &str, pos: usize, _: &Context<'_>) -> RResult<(usize, Vec<Pair>)> {
+        let up_to = &line[..pos];
+        let start = up_to.rfind(' ').map_or(0, |i| i + 1);
+
+        let prefix = &line[0..line.find(' ').unwrap_or(0)];
+        let cmds: Vec<&str> = CMDS.iter().map(|(c, _)| *c).collect();
+
+        let poss = if let Some((_, Some(arg))) = CMDS.iter().find(|(c, _)| *c == prefix) {
+            arg
+        } else if !up_to.contains(' ') && up_to.starts_with('/') {
+            cmds.as_slice()
+        } else {
+            &[]
+        };
+
+        let cur = &line[start..pos];
+
+        let matches = poss
+            .iter()
+            .filter(|c| c.starts_with(cur))
+            .map(|c| Pair { display: c.to_string(), replacement: c.to_string() })
+            .collect();
+
+        Ok((start, matches))
+    }
+}
 
 fn main() -> Result<()> {
     let renderer = Arc::new(Mutex::new(Renderer::new()));
@@ -21,7 +64,8 @@ fn main() -> Result<()> {
         }
     });
 
-    let mut rl = DefaultEditor::new()?;
+    let mut rl = Editor::new()?;
+    rl.set_helper(Some(Complete));
 
     let mut agent = if let Some(name) = env::args().nth(1) {
         Agent::load(renderer.clone(), &name)
@@ -46,12 +90,24 @@ fn main() -> Result<()> {
                 } else if let Some(model) = prompt.strip_prefix("/model ") {
                     if MODELS.contains(&model) {
                         agent.model = model.to_string();
-                        renderer.lock().unwrap().write_success(&format!("changed to {model}"));
+                        renderer.lock().unwrap().write_success(&format!("model set to {model}"));
                     } else {
-                        renderer.lock().unwrap().write_error(&format!("invalid model {model}"));
+                        renderer.lock().unwrap().write_error(&format!("invalid model id '{model}'"));
                     }
-                } else if prompt.starts_with("/") {
-                    renderer.lock().unwrap().write_error(&format!("invalid command {prompt}"));
+                } else if let Some(think) = prompt.strip_prefix("/think ") {
+                    if THINKS.contains(&think) {
+                        agent.thinking = think.to_string();
+                        renderer.lock().unwrap().write_success(&format!("thinking set to {think}"));
+                    } else {
+                        renderer.lock().unwrap().write_error(&format!("invalid thinking level '{think}'"));
+                    }
+                } else if prompt == "/yolo" {
+                    agent.yolo = !agent.yolo;
+                    if agent.yolo {
+                        renderer.lock().unwrap().write_success("yolo enabled");
+                    } else {
+                        renderer.lock().unwrap().write_error("yolo disabled");
+                    }
                 } else {
                     agent.prompt(&prompt)?;
                 }

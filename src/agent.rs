@@ -1,10 +1,11 @@
 use crate::{render, utils};
 use crate::oauth::Credentials;
 use crate::render::Renderer;
-use crate::sse::{self, Body, Content, Message, Role, StopReason};
+use crate::sse::{self, Body, Content, Message, OutputConfig, Role, StopReason, Thinking};
 use crate::tools::{self, Tool};
 
 use std::fs;
+use std::fmt::Write;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
@@ -33,11 +34,13 @@ Guidelines:
 
 pub struct Agent {
     pub model: String,
+    pub thinking: String,
     renderer: Arc<Mutex<Renderer>>,
     creds: Credentials,
     tools: Vec<Tool>,
     system: Vec<Content>,
     messages: Vec<Message>,
+    pub yolo: bool,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -51,6 +54,7 @@ impl Agent {
     pub fn new(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
         Ok(Self {
             model: "sonnet-5-5".to_string(),
+            thinking: "medium".to_string(),
             renderer: renderer.clone(),
             creds: Credentials::get(renderer)?,
             tools: tools::tools(),
@@ -59,6 +63,7 @@ impl Agent {
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
             ],
             messages: Vec::new(),
+            yolo: false,
         })
     }
 
@@ -67,47 +72,57 @@ impl Agent {
         let json = fs::read_to_string(file)?;
         let save: AgentSave = serde_json::from_str(&json)?;
 
+        let tools = tools::tools();
+        let mut out = String::new();
+
         for msg in &save.messages {
             for cont in &msg.content {
                 match cont {
                     Content::Text { text, .. } => {
                         match msg.role {
                             Role::User => {
-                                println!("\n\x1b[35m>\x1b[0m {text}");
+                                writeln!(out, "\n\x1b[35m>\x1b[0m {text}").unwrap();
                             }
                             Role::Assistant => {
-                                let mut pretty = String::new();
-                                bat::PrettyPrinter::new()
-                                    .input_from_bytes(text.as_bytes())
-                                    .language("markdown")
-                                    .theme("base16")
-                                    .colored_output(true)
-                                    .print_with_writer(Some(&mut pretty))
-                                    .unwrap();
-
-                                println!("{}", render::with_bg(&pretty));
+                                writeln!(out, "{}", render::format(text)).unwrap();
                             }
                             _ => {}
                         }
                     }
+                    Content::Thinking { thinking, .. } if !thinking.trim().is_empty() => {
+                        writeln!(out, "{}", render::dimmed(thinking.trim())).unwrap();
+                    }
                     Content::ToolUse { name, input, .. } => {
-                        println!(
-                            "\x1b[1m+ {name}({})\x1b[0m",
-                            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
-                        );
+                        let tool = tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
+                        let disp = (tool.render)(input.clone());
+
+                        if let Ok(d) = disp {
+                            writeln!(out, "\x1b[1m{}\x1b[0m", d).unwrap();
+                        } else {
+                            writeln!(
+                                out,
+                                "\x1b[1m+ {name}({})\x1b[0m",
+                                input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
+                            )
+                            .unwrap();
+                        }
                     }
                     _ => {}
                 }
             }
         }
 
+        print!("{out}");
+
         Ok(Self {
+            tools,
             model: save.model,
+            thinking: "medium".to_string(),
             renderer: renderer.clone(),
             creds: Credentials::get(renderer)?,
-            tools: tools::tools(),
             system: save.system,
             messages: save.messages,
+            yolo: false,
         })
     }
 
@@ -131,11 +146,16 @@ impl Agent {
     fn body(&self) -> Body {
         Body {
             model: format!("claude-{}", self.model),
-            max_tokens: 32_768,
+            max_tokens: 65_536,
             stream: true,
             system: self.system.clone(),
             tools: self.tools.iter().map(Tool::to_json).collect(),
             messages: self.messages.clone(),
+            thinking: Thinking {
+                kind: "adaptive".to_string(),
+                display: "summarized".to_string(),
+            },
+            output_config: OutputConfig { effort: self.thinking.clone() },
         }
     }
 
@@ -159,15 +179,20 @@ impl Agent {
             for c in &resp.content {
                 if let Content::ToolUse { id, name, input } = c {
                     let tool = self.tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
+                    let disp = (tool.render)(input.clone());
 
                     self.renderer.lock().unwrap().write_line(
-                        &format!(
-                            "\x1b[1m+ {name}({})\x1b[0m",
-                            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
-                        ),
+                        &if let Ok(d) = disp {
+                            format!("\x1b[1m{}\x1b[0m", d)
+                        } else {
+                            format!(
+                                "\x1b[1m+ {name}({})\x1b[0m",
+                                input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
+                            )
+                        },
                     );
 
-                    if !tool.dangerous || self.renderer.lock().unwrap().confirm() {
+                    if !tool.dangerous || self.yolo || self.renderer.lock().unwrap().confirm() {
                         let resp = (tool.call)(input.clone());
                         let err = resp.is_err();
 

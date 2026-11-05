@@ -1,5 +1,5 @@
 use crate::oauth::Credentials;
-use crate::render::Renderer;
+use crate::render::{self, Renderer};
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -20,6 +20,8 @@ pub struct Body {
     pub system: Vec<Content>,
     pub tools: Value,
     pub messages: Vec<Message>,
+    pub thinking: Thinking,
+    pub output_config: OutputConfig,
 }
 
 impl Body {
@@ -41,6 +43,18 @@ impl Body {
         }
         self
     }
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Thinking {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub display: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct OutputConfig {
+    pub effort: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -177,6 +191,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
 
     let mut line: Vec<u8> = Vec::new();
     let mut cur = None;
+    let mut rendered = 0;
     let mut json_buf = String::new();
 
     let (stop_reason, usage) = loop {
@@ -204,6 +219,8 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 renderer.lock().unwrap().set_status(Some(stat));
 
                 cur = Some(content_block);
+
+                rendered = 0;
                 json_buf.clear();
             }
             Event::ContentBlockDelta { index, delta } => {
@@ -212,22 +229,24 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                     ContentDelta::TextDelta { delta } => {
                         if let Some(Content::Text { text, .. }) = cur.as_mut() {
                             text.push_str(&delta);
+                            let pending = &text[rendered..];
 
-                            let mut full = String::new();
-                            bat::PrettyPrinter::new()
-                                .input_from_bytes(text.as_bytes())
-                                .language("markdown")
-                                .theme("base16")
-                                .colored_output(true)
-                                .print_with_writer(Some(&mut full))
-                                .unwrap();
-
-                            renderer.lock().unwrap().write_pretty(&delta, &full.trim());
+                            if !pending.trim().is_empty() {
+                                let full = render::format(text);
+                                renderer.lock().unwrap().write_pretty(pending, &full);
+                                rendered = text.len();
+                            }
                         }
                     }
                     ContentDelta::ThinkingDelta { delta } => {
                         if let Some(Content::Thinking { thinking, .. }) = cur.as_mut() {
                             thinking.push_str(&delta);
+                            let pending = &thinking[rendered..];
+
+                            if !pending.trim().is_empty() {
+                                renderer.lock().unwrap().write_plain(&delta);
+                                rendered = thinking.len();
+                            }
                         }
                     }
                     ContentDelta::SignatureDelta { delta } => {
@@ -244,9 +263,15 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 if !json_buf.is_empty() && let Some(Content::ToolUse { input, .. }) = cur.as_mut() {
                     *input = serde_json::from_str(&json_buf)?;
                 }
+
+                let textual = matches!(cur, Some(Content::Text { .. })) || matches!(cur, Some(Content::Thinking { .. }));
+
                 content.push(cur.take().unwrap());
                 renderer.lock().unwrap().set_status(None);
-                renderer.lock().unwrap().finish();
+
+                if textual {
+                    renderer.lock().unwrap().finish();
+                }
             }
             Event::MessageDelta { delta: MessageDelta { stop_reason }, usage } => {
                 break (stop_reason, usage);

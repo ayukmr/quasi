@@ -36,13 +36,13 @@ struct AnthropicCredentials {
     expires_in: u64,
 }
 
-struct PKCE {
+struct Pkce {
     verifier: String,
     challenge: String,
     state: String,
 }
 
-impl PKCE {
+impl Pkce {
     fn generate() -> Self {
         let verifier = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
 
@@ -87,7 +87,7 @@ impl Credentials {
 
     fn from_login(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
         let redirect_url = format!("{REDIRECT_HOST}{REDIRECT_PATH}");
-        let pkce = PKCE::generate();
+        let pkce = Pkce::generate();
 
         let params = [
             ("code", "true"),
@@ -179,7 +179,7 @@ impl Credentials {
         Ok(())
     }
 
-    fn from_auth_code(code: &str, pkce: &PKCE) -> Result<Self> {
+    fn from_auth_code(code: &str, pkce: &Pkce) -> Result<Self> {
         let redirect_url = format!("{REDIRECT_HOST}{REDIRECT_PATH}");
 
         let body = json!({
