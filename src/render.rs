@@ -1,5 +1,7 @@
 use std::io::{self, Write};
 
+use bat::PrettyPrinter;
+
 pub struct Renderer {
     t: usize,
     status: Option<String>,
@@ -10,7 +12,7 @@ pub struct Renderer {
 
 pub fn format(text: &str) -> String {
     let mut syn = String::new();
-    bat::PrettyPrinter::new()
+    PrettyPrinter::new()
         .input_from_bytes(text.as_bytes())
         .language("markdown")
         .theme("base16")

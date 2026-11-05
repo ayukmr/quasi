@@ -5,6 +5,7 @@ use std::fs;
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
+use bat::{Input, PrettyPrinter};
 use mlua::{Function, Lua, LuaSerdeExt, Table};
 use serde_json::{Value, json};
 
@@ -222,9 +223,15 @@ fn render_write(args: HashMap<String, Value>) -> Result<String> {
     let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
     let content = args.get("content").context("content: omitted")?.as_str().context("content: wrong type")?;
 
-    let diff_new = content.lines().map(|l| format!("\x1b[32m+ {l}\x1b[0m")).collect::<Vec<_>>().join("\n");
+    let mut syn = String::new();
+    PrettyPrinter::new()
+        .input(Input::from_bytes(content.as_bytes()).name(path))
+        .theme("base16")
+        .colored_output(true)
+        .print_with_writer(Some(&mut syn))
+        .unwrap();
 
-    Ok(format!("writing to {path}:\n{diff_new}"))
+    Ok(format!("writing to {path}:\n{}", syn.trim()))
 }
 
 fn edit(args: HashMap<String, Value>) -> Result<String> {
@@ -256,12 +263,37 @@ fn render_edit(args: HashMap<String, Value>) -> Result<String> {
     let lines_start = content[..start].rfind('\n').map_or(0, |i| i + 1);
     let lines_end = content[end..].find('\n').map_or(content.len(), |i| end + i);
 
-    let range = &content[lines_start..lines_end];
+    let prefix = &content[lines_start..start];
+    let suffix = &content[end..lines_end];
 
-    let diff_old = range.replacen(old, &format!("\x1b[30;41m{old}\x1b[31;49m"), 1).lines().map(|l| format!("\x1b[31m- {l}\x1b[0m")).collect::<Vec<_>>().join("\n");
-    let diff_new = range.replacen(old, &format!("\x1b[30;42m{new}\x1b[32;49m"), 1).lines().map(|l| format!("\x1b[32m+ {l}\x1b[0m")).collect::<Vec<_>>().join("\n");
+    let diff_old = format_diff(prefix, suffix, old, "-", "31", "41");
+    let diff_new = format_diff(prefix, suffix, new, "+", "32", "42");
 
     Ok(format!("editing {path}:\n{diff_old}\n{diff_new}"))
+}
+
+fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl: &str) -> String {
+    let segments: Vec<&str> = mid.lines().collect();
+    let last = segments.len() - 1;
+
+    segments
+        .iter()
+        .enumerate()
+        .map(|(i, seg)| {
+            let mut s = String::new();
+
+            if i == 0 {
+                s.push_str(prefix);
+            }
+            s.push_str(&format!("\x1b[30;{hl}m{seg}\x1b[{fg};49m"));
+            if i == last {
+                s.push_str(suffix);
+            }
+
+            format!("\x1b[{fg}m{marker} {s}\x1b[0m")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 const SANDBOX: &str = r#"(version 1)
