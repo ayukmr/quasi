@@ -1,21 +1,44 @@
+use crate::utils;
+
 use std::{collections::HashMap, path::PathBuf};
 use std::fs;
 use std::process::Command;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use mlua::{Function, Lua, LuaSerdeExt, Table};
 use serde_json::{Value, json};
 
 pub struct Tool {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub params: Vec<(&'static str, &'static str, &'static str)>,
-    pub required: Vec<&'static str>,
+    pub name: String,
+    pub description: String,
+    pub params: Vec<(String, String, String)>,
+    pub required: Vec<String>,
     pub dangerous: bool,
-    pub call: fn(HashMap<String, Value>) -> Result<String>,
-    pub render: fn(HashMap<String, Value>) -> Result<String>,
+    pub call: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
+    pub render: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
 }
 
 impl Tool {
+    pub fn create(
+        name: &str,
+        description: &str,
+        params: Vec<(&str, &str, &str)>,
+        required: Vec<&str>,
+        dangerous: bool,
+        call: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
+        render: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            description: description.to_string(),
+            params: params.iter().map(|p| (p.0.to_string(), p.1.to_string(), p.2.to_string())).collect(),
+            required: required.iter().map(|r| r.to_string()).collect(),
+            dangerous,
+            call,
+            render,
+        }
+    }
+
     pub fn to_json(&self) -> Value {
         json!({
             "name": self.name,
@@ -32,58 +55,133 @@ impl Tool {
     }
 }
 
-pub fn tools() -> Vec<Tool> {
-    vec![
-        Tool {
-            name: "read",
-            description: "Read the contents of a file. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
-            params: vec![
+fn lua_err(e: mlua::Error) -> anyhow::Error {
+    anyhow!("{e}")
+}
+
+pub fn tools() -> Result<Vec<Tool>> {
+    let mut tools = Vec::new();
+
+    if let Ok(dir) = utils::tools_dir() {
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.extension().is_none_or(|e| e != "lua") {
+                continue;
+            }
+
+            let lua = Lua::new();
+            lua.load(path).exec().map_err(lua_err)?;
+
+            let globals = lua.globals();
+
+            let name: String = globals.get("name").map_err(lua_err)?;
+            let description: String = globals.get("description").map_err(lua_err)?;
+
+            let params_t: Table = globals.get("params").map_err(lua_err)?;
+            let params = params_t
+                .sequence_values::<Table>()
+                .map(|r| {
+                    let r = r?;
+                    Ok((r.get(1)?, r.get(2)?, r.get(3)?))
+                })
+                .collect::<mlua::Result<Vec<(String, String, String)>>>().map_err(lua_err)?;
+
+            let required: Vec<String> = globals.get("required").map_err(lua_err)?;
+            let dangerous: bool = globals.get("dangerous").map_err(lua_err)?;
+
+            let call: Function = globals.get("call").map_err(lua_err)?;
+            let render: Function = globals.get("render").map_err(lua_err)?;
+
+            let lua_c = lua.clone();
+            let call_box =
+                Box::new(move |args| {
+                    let arg = lua_c.to_value(&args).map_err(lua_err)?;
+                    call.call(arg).map_err(lua_err)
+                });
+
+            let lua_r = lua.clone();
+            let render_box =
+                Box::new(move |args| {
+                    let arg = lua_r.to_value(&args).map_err(lua_err)?;
+                    render.call(arg).map_err(lua_err)
+                });
+
+            tools.push(
+                Tool {
+                    name,
+                    description,
+                    params,
+                    required,
+                    dangerous,
+                    call: call_box,
+                    render: render_box,
+                }
+            );
+        }
+    }
+
+    tools.push(
+        Tool::create(
+            "read",
+            "Read the contents of a file. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
+            vec![
                 ("path", "string", "Path to the file to read (relative or absolute)"),
                 ("offset", "number", "Line number to start reading from (1-indexed)"),
                 ("limit", "number", "Maximum number of lines to read"),
             ],
-            required: vec!["path"],
-            dangerous: false,
-            call: read,
-            render: render_read,
-        },
-        Tool {
-            name: "write",
-            description: "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
-            params: vec![
+            vec!["path"],
+            false,
+            Box::new(read),
+            Box::new(render_read),
+        )
+    );
+
+    tools.push(
+        Tool::create(
+            "write",
+            "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+            vec![
                 ("path", "string", "Path to the file to write (relative or absolute)"),
                 ("content", "string", "Content to write to the file"),
             ],
-            required: vec!["path", "content"],
-            dangerous: true,
-            call: write,
-            render: render_write,
-        },
-        Tool {
-            name: "edit",
-            description: "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
-            params: vec![
+            vec!["path", "content"],
+            true,
+            Box::new(write),
+            Box::new(render_write),
+        )
+    );
+
+    tools.push(
+        Tool::create(
+            "edit",
+            "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
+            vec![
                 ("path", "string", "Path to the file to edit (relative or absolute)"),
                 ("old_text", "string", "Exact text to find and replace (must match exactly)"),
                 ("new_text", "string", "New text to replace the old text with"),
             ],
-            required: vec!["path", "old_text", "new_text"],
-            dangerous: true,
-            call: edit,
-            render: render_edit,
-        },
-        Tool {
-            name: "bash",
-            description: "Execute a bash command in the current working directory. Returns stdout and stderr.",
-            params: vec![
+            vec!["path", "old_text", "new_text"],
+            true,
+            Box::new(edit),
+            Box::new(render_edit),
+        )
+    );
+
+    tools.push(
+        Tool::create(
+            "bash",
+            "Execute a bash command in the current working directory. Returns stdout and stderr.",
+            vec![
                 ("command", "string", "Bash command to execute"),
             ],
-            required: vec!["command"],
-            dangerous: false,
-            call: bash,
-            render: render_bash,
-        },
-    ]
+            vec!["command"],
+            false,
+            Box::new(bash),
+            Box::new(render_bash),
+        )
+    );
+
+    Ok(tools)
 }
 
 fn read(args: HashMap<String, Value>) -> Result<String> {

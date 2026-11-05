@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::Result;
-use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Result as RResult, Validator};
+use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Validator};
 
 const TICK: Duration = Duration::from_millis(30);
 
@@ -26,7 +26,7 @@ struct Complete;
 impl Completer for Complete {
     type Candidate = Pair;
 
-    fn complete(&self, line: &str, pos: usize, _: &Context<'_>) -> RResult<(usize, Vec<Pair>)> {
+    fn complete(&self, line: &str, pos: usize, _: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
         let up_to = &line[..pos];
         let start = up_to.rfind(' ').map_or(0, |i| i + 1);
 

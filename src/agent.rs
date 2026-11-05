@@ -25,7 +25,8 @@ Guidelines:
 - Use write only for new files or complete rewrites
 - Use bash for file operations like ls, rg (ripgrep), find
 - Do not use bash when another tool would work
-- Bash is sandboxed for file writing, do not try to get around it
+- Bash is sandboxed for file writing, do not try to get around it or use python for writing
+- Always use fully qualified paths, ~ will not be expanded to $HOME
 - Do not be too eager with writing files - ask the user if it is implied but not said
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses, do not state multiple solutions unless asked
@@ -57,7 +58,7 @@ impl Agent {
             thinking: "medium".to_string(),
             renderer: renderer.clone(),
             creds: Credentials::get(renderer)?,
-            tools: tools::tools(),
+            tools: tools::tools()?,
             system: vec![
                 Content::Text { text: "You are Claude Code, Anthropic's official CLI for Claude.".to_string(), cache_control: None },
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
@@ -72,7 +73,7 @@ impl Agent {
         let json = fs::read_to_string(file)?;
         let save: AgentSave = serde_json::from_str(&json)?;
 
-        let tools = tools::tools();
+        let tools = tools::tools()?;
         let mut out = String::new();
 
         for msg in &save.messages {

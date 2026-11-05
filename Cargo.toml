@@ -8,6 +8,7 @@ anyhow = "1.0.104"
 base64 = "0.23.1"
 bat = "0.26.1"
 minreq = { version = "3.0.0", features = ["https"] }
+mlua = { version = "0.12.2", features = ["lua54", "vendored", "serialize"] }
 rand = "0.10.3"
 rustyline = { version = "19.0.0", default-features = false, features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }
