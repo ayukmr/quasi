@@ -63,8 +63,8 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 pub fn tools() -> Result<Vec<Tool>> {
     let mut tools = Vec::new();
 
-    if let Ok(dir) = utils::tools_dir() {
-        for entry in fs::read_dir(dir)? {
+    if let Ok(dir) = utils::tools_dir() && let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries {
             let path = entry?.path();
             if path.extension().is_none_or(|e| e != "lua") {
                 continue;
