@@ -69,14 +69,18 @@ pub fn tools() -> Result<Vec<Tool>> {
             if path.extension().is_none_or(|e| e != "lua") {
                 continue;
             }
+            let path_s = path.to_str().unwrap();
 
             let lua = Lua::new();
-            lua.load(path).exec().map_err(lua_err)?;
+            lua.load(path.as_path()).exec().map_err(lua_err)?;
 
             let globals = lua.globals();
 
             let name: String = globals.get("name").map_err(lua_err)?;
-            let description: String = globals.get("description").map_err(lua_err)?;
+            let description: String = format!(
+                "{} (Lua tool from {path_s})",
+                globals.get::<String>("description").map_err(lua_err)?,
+            );
 
             let params_t: Table = globals.get("params").map_err(lua_err)?;
             let params = params_t
@@ -94,18 +98,16 @@ pub fn tools() -> Result<Vec<Tool>> {
             let render: Function = globals.get("render").map_err(lua_err)?;
 
             let lua_c = lua.clone();
-            let call_box =
-                Box::new(move |args| {
-                    let arg = lua_c.to_value(&args).map_err(lua_err)?;
-                    call.call(arg).map_err(lua_err)
-                });
+            let call_box = Box::new(move |args| {
+                let arg = lua_c.to_value(&args).map_err(lua_err)?;
+                call.call(arg).map_err(lua_err)
+            });
 
             let lua_r = lua.clone();
-            let render_box =
-                Box::new(move |args| {
-                    let arg = lua_r.to_value(&args).map_err(lua_err)?;
-                    render.call(arg).map_err(lua_err)
-                });
+            let render_box = Box::new(move |args| {
+                let arg = lua_r.to_value(&args).map_err(lua_err)?;
+                render.call(arg).map_err(lua_err)
+            });
 
             tools.push(
                 Tool {
