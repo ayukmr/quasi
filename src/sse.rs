@@ -244,7 +244,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                             let pending = &thinking[rendered..];
 
                             if !pending.trim().is_empty() {
-                                renderer.lock().unwrap().write_plain(&delta);
+                                renderer.lock().unwrap().write_plain(pending);
                                 rendered = thinking.len();
                             }
                         }
