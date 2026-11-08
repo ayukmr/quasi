@@ -179,7 +179,7 @@ pub struct Response {
     pub usage: Usage,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,

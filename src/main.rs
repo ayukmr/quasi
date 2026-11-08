@@ -78,7 +78,13 @@ fn main() -> Result<()> {
         renderer.lock().unwrap().write_line("");
         renderer.lock().unwrap().flush();
 
-        let readline = rl.readline(&format!("\x1b[35m{}>\x1b[0m ", agent.model));
+        let readline = rl.readline(&format!(
+            "\x1b[31m↑\x1b[0m{} \x1b[34m↓\x1b[0m{}\n\x1b[35m{}>\x1b[0m ",
+            agent.usage.input_tokens,
+            agent.usage.output_tokens,
+            agent.model,
+        ));
+
         match readline {
             Ok(prompt) => {
                 if prompt.is_empty() {

@@ -1,7 +1,7 @@
 use crate::{render, utils};
 use crate::oauth::Credentials;
 use crate::render::Renderer;
-use crate::sse::{self, Body, Content, Message, OutputConfig, Role, StopReason, Thinking};
+use crate::sse::{self, Body, Content, Message, OutputConfig, Role, StopReason, Thinking, Usage};
 use crate::tools::{self, Tool};
 
 use std::fs;
@@ -41,6 +41,7 @@ pub struct Agent {
     tools: Vec<Tool>,
     system: Vec<Content>,
     messages: Vec<Message>,
+    pub usage: Usage,
     pub yolo: bool,
 }
 
@@ -49,6 +50,7 @@ pub struct AgentSave {
     model: String,
     system: Vec<Content>,
     messages: Vec<Message>,
+    usage: Usage,
 }
 
 impl Agent {
@@ -64,6 +66,7 @@ impl Agent {
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
             ],
             messages: Vec::new(),
+            usage: Usage { input_tokens: 0, output_tokens: 0 },
             yolo: false,
         })
     }
@@ -112,6 +115,7 @@ impl Agent {
             creds: Credentials::get(renderer)?,
             system: save.system,
             messages: save.messages,
+            usage: save.usage,
             yolo: false,
         })
     }
@@ -121,6 +125,7 @@ impl Agent {
             model: self.model.clone(),
             system: self.system.clone(),
             messages: self.messages.clone(),
+            usage: self.usage,
         };
 
         let file = format!("{name}.json");
@@ -162,9 +167,17 @@ impl Agent {
             }
         );
 
-        let mut resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
+        let mut resp;
 
         loop {
+            resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
+
+            self.usage.input_tokens += resp.usage.input_tokens;
+            self.usage.output_tokens += resp.usage.output_tokens;
+
+            self.messages.push(Message { role: Role::Assistant, content: resp.content });
+            let content = &self.messages.last().unwrap().content;
+
             if !matches!(resp.stop_reason, StopReason::ToolUse) {
                 break;
             }
@@ -173,7 +186,7 @@ impl Agent {
 
             let mut tool_res = vec![];
 
-            for c in &resp.content {
+            for c in content {
                 if let Content::ToolUse { id, name, input } = c {
                     let tool = self.tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
 
@@ -201,14 +214,8 @@ impl Agent {
             }
 
             self.renderer.lock().unwrap().set_status(None);
-
-            self.messages.push(Message { role: Role::Assistant, content: resp.content });
             self.messages.push(Message { role: Role::User, content: tool_res });
-
-            resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
         }
-
-        self.messages.push(Message { role: Role::Assistant, content: resp.content });
 
         Ok(())
     }
