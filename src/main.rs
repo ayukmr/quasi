@@ -100,6 +100,9 @@ fn main() -> Result<()> {
                 if let Some(name) = prompt.strip_prefix("/save ") {
                     agent.save(name)?;
                     renderer.lock().unwrap().write_success(&format!("saved to {name}"));
+                } else if prompt == "/sync" {
+                    sync = None;
+                    renderer.lock().unwrap().write_error("stopped syncing");
                 } else if let Some(name) = prompt.strip_prefix("/sync ") {
                     sync = Some(name.to_string());
                     agent.save(name)?;
