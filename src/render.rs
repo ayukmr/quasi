@@ -60,15 +60,13 @@ fn rows(s: &str) -> usize {
 pub fn tool(tool: &Tool, input: &HashMap<String, Value>) -> String {
     let disp = (tool.render)(input.clone());
 
-    if let Ok(d) = disp {
-        format!("\x1b[1m{}\x1b[0m", d)
-    } else {
+    disp.unwrap_or_else(|_| {
         format!(
             "\x1b[1m+ {}({})\x1b[0m",
             tool.name,
-            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
+            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", "),
         )
-    }
+    })
 }
 
 impl Renderer {

@@ -169,6 +169,8 @@ impl Agent {
                 break;
             }
 
+            self.renderer.lock().unwrap().set_status(Some("calling tools"));
+
             let mut tool_res = vec![];
 
             for c in &resp.content {
@@ -197,6 +199,8 @@ impl Agent {
                     );
                 }
             }
+
+            self.renderer.lock().unwrap().set_status(None);
 
             self.messages.push(Message { role: Role::Assistant, content: resp.content });
             self.messages.push(Message { role: Role::User, content: tool_res });

@@ -205,7 +205,7 @@ fn render_read(args: HashMap<String, Value>) -> Result<String> {
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?;
 
     Ok(format!(
-        "reading {path}{}{}",
+        "\x1b[1mreading {path}\x1b[0m{}{}",
         offset.map_or(String::new(), |o| format!(" @ {o}")),
         limit.map_or(String::new(), |l| format!(" (limit: {l})")),
     ))
@@ -233,7 +233,7 @@ fn render_write(args: HashMap<String, Value>) -> Result<String> {
         .print_with_writer(Some(&mut syn))
         .unwrap();
 
-    Ok(format!("writing to {path}:\n{}", syn.trim()))
+    Ok(format!("\x1b[1mwriting to {path}:\x1b[0m\n{}", syn.trim()))
 }
 
 fn edit(args: HashMap<String, Value>) -> Result<String> {
@@ -271,7 +271,7 @@ fn render_edit(args: HashMap<String, Value>) -> Result<String> {
     let diff_old = format_diff(prefix, suffix, old, "-", "31", "41");
     let diff_new = format_diff(prefix, suffix, new, "+", "32", "42");
 
-    Ok(format!("editing {path}:\n{diff_old}\n{diff_new}"))
+    Ok(format!("\x1b[1mediting {path}:\x1b[0m\n{diff_old}\n{diff_new}"))
 }
 
 fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl: &str) -> String {
@@ -327,5 +327,5 @@ fn bash(args: HashMap<String, Value>) -> Result<String> {
 fn render_bash(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
-    Ok(format!("$ {command}"))
+    Ok(format!("\x1b[1m$ {command}\x1b[0m"))
 }
