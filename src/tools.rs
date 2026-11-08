@@ -193,7 +193,7 @@ fn read(args: HashMap<String, Value>) -> Result<String> {
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?.unwrap_or(2000) as usize;
 
     let content = fs::read_to_string(path)?;
-    let lines = content.lines().skip(offset.saturating_sub(1));
+    let lines = content.split('\n').skip(offset.saturating_sub(1));
     let out: Vec<&str> = lines.take(limit).collect();
 
     Ok(out.join("\n"))
@@ -275,8 +275,8 @@ fn render_edit(args: HashMap<String, Value>) -> Result<String> {
 }
 
 fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl: &str) -> String {
-    let segments: Vec<&str> = mid.lines().collect();
-    let last = segments.len() - 1;
+    let segments: Vec<&str> = mid.split('\n').collect();
+    let last = segments.len().saturating_sub(1);
 
     segments
         .iter()
