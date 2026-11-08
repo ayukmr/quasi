@@ -182,6 +182,7 @@ pub struct Response {
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub struct Usage {
     pub input_tokens: u32,
+    pub cache_creation_input_tokens: u32,
     pub output_tokens: u32,
 }
 

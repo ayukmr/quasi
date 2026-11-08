@@ -15,6 +15,7 @@ const THINKS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 const CMDS: &[(&str, Option<&[&str]>)] = &[
     ("/save", None),
+    ("/sync", None),
     ("/model", Some(MODELS)),
     ("/think", Some(THINKS)),
     ("/yolo", None),
@@ -74,15 +75,20 @@ fn main() -> Result<()> {
         Agent::new(renderer.clone())
     }?;
 
+    let mut sync = None;
+
     loop {
         renderer.lock().unwrap().write_line("");
         renderer.lock().unwrap().flush();
 
         let readline = rl.readline(&format!(
-            "\x1b[31m↑\x1b[0m{} \x1b[34m↓\x1b[0m{}\n\x1b[35m{}>\x1b[0m ",
-            agent.usage.input_tokens,
-            agent.usage.output_tokens,
+            "{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m>\x1b[0m ",
+            sync.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
+            agent.thinking,
+            agent.usage.input_tokens,
+            agent.usage.cache_creation_input_tokens,
+            agent.usage.output_tokens,
         ));
 
         match readline {
@@ -94,6 +100,10 @@ fn main() -> Result<()> {
                 if let Some(name) = prompt.strip_prefix("/save ") {
                     agent.save(name)?;
                     renderer.lock().unwrap().write_success(&format!("saved to {name}"));
+                } else if let Some(name) = prompt.strip_prefix("/sync ") {
+                    sync = Some(name.to_string());
+                    agent.save(name)?;
+                    renderer.lock().unwrap().write_success(&format!("syncing with {name}"));
                 } else if let Some(model) = prompt.strip_prefix("/model ") {
                     if MODELS.contains(&model) {
                         agent.model = model.to_string();
@@ -120,6 +130,9 @@ fn main() -> Result<()> {
                     renderer.lock().unwrap().write_success("reloaded tools");
                 } else {
                     agent.prompt(&prompt)?;
+                    if let Some(ref name) = sync {
+                        agent.save(name)?;
+                    }
                 }
             },
             _ => break,

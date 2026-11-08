@@ -66,7 +66,7 @@ impl Agent {
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
             ],
             messages: Vec::new(),
-            usage: Usage { input_tokens: 0, output_tokens: 0 },
+            usage: Usage { input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 },
             yolo: false,
         })
     }
@@ -173,6 +173,7 @@ impl Agent {
             resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
 
             self.usage.input_tokens += resp.usage.input_tokens;
+            self.usage.cache_creation_input_tokens += resp.usage.cache_creation_input_tokens;
             self.usage.output_tokens += resp.usage.output_tokens;
 
             self.messages.push(Message { role: Role::Assistant, content: resp.content });
