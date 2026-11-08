@@ -72,7 +72,7 @@ impl Agent {
     }
 
     pub fn load(renderer: Arc<Mutex<Renderer>>, name: &str) -> Result<Self> {
-        let file = utils::convo_dir()?.join(format!("{name}.json"));
+        let file = utils::state_dir()?.join(format!("{name}.json"));
         let json = fs::read_to_string(file)?;
         let save: AgentSave = serde_json::from_str(&json)?;
 
@@ -131,7 +131,7 @@ impl Agent {
         let file = format!("{name}.json");
         let json = serde_json::to_string_pretty(&save)?;
 
-        let dir = utils::convo_dir()?;
+        let dir = utils::state_dir()?;
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(file), json)?;
 

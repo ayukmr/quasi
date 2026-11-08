@@ -8,8 +8,9 @@ pub fn config_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".config/quasi"))
 }
 
-pub fn convo_dir() -> Result<PathBuf> {
-    Ok(config_dir()?.join("convo"))
+pub fn state_dir() -> Result<PathBuf> {
+    let home = env::var_os("HOME").context("$HOME not set")?;
+    Ok(PathBuf::from(home).join(".local/state/quasi"))
 }
 
 pub fn tools_dir() -> Result<PathBuf> {
