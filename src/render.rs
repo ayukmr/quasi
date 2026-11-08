@@ -131,7 +131,7 @@ impl Renderer {
     }
 
     pub fn write_line(&mut self, s: &str) {
-        self.queue += &format!("{s}\n");
+        self.queue += &format!("\r\x1b[2K{s}\n");
         self.last.clear();
     }
 
