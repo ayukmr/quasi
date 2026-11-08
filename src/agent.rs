@@ -95,18 +95,7 @@ impl Agent {
                     }
                     Content::ToolUse { name, input, .. } => {
                         let tool = tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
-                        let disp = (tool.render)(input.clone());
-
-                        if let Ok(d) = disp {
-                            writeln!(out, "\x1b[1m{}\x1b[0m", d).unwrap();
-                        } else {
-                            writeln!(
-                                out,
-                                "\x1b[1m+ {name}({})\x1b[0m",
-                                input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
-                            )
-                            .unwrap();
-                        }
+                        writeln!(out, "{}", render::tool(tool, input)).unwrap();
                     }
                     _ => {}
                 }
@@ -185,41 +174,27 @@ impl Agent {
             for c in &resp.content {
                 if let Content::ToolUse { id, name, input } = c {
                     let tool = self.tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
-                    let disp = (tool.render)(input.clone());
 
-                    self.renderer.lock().unwrap().write_line(
-                        &if let Ok(d) = disp {
-                            format!("\x1b[1m{}\x1b[0m", d)
+                    self.renderer.lock().unwrap().write_line(&render::tool(tool, input));
+
+                    let (content, is_error) =
+                        if !tool.dangerous || self.yolo || self.renderer.lock().unwrap().confirm() {
+                            let resp = (tool.call)(input.clone());
+                            let is_err = resp.is_err();
+
+                            (resp.unwrap_or_else(|e| format!("error: {}", e)), is_err)
                         } else {
-                            format!(
-                                "\x1b[1m+ {name}({})\x1b[0m",
-                                input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
-                            )
+                            ("error: tool denied by user".to_string(), true)
+                        };
+
+                    tool_res.push(
+                        Content::ToolResult {
+                            content,
+                            is_error,
+                            tool_use_id: id.to_string(),
+                            cache_control: None,
                         },
                     );
-
-                    if !tool.dangerous || self.yolo || self.renderer.lock().unwrap().confirm() {
-                        let resp = (tool.call)(input.clone());
-                        let err = resp.is_err();
-
-                        tool_res.push(
-                            Content::ToolResult {
-                                tool_use_id: id.to_string(),
-                                content: resp.unwrap_or_else(|e| format!("error: {}", e)),
-                                is_error: err,
-                                cache_control: None,
-                            },
-                        );
-                    } else {
-                        tool_res.push(
-                            Content::ToolResult {
-                                tool_use_id: id.to_string(),
-                                content: "error: tool denied by user".to_string(),
-                                is_error: true,
-                                cache_control: None,
-                            },
-                        );
-                    }
                 }
             }
 

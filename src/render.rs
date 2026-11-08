@@ -1,6 +1,10 @@
+use crate::tools::Tool;
+
+use std::collections::HashMap;
 use std::io::{self, Write};
 
 use bat::PrettyPrinter;
+use serde_json::Value;
 
 pub struct Renderer {
     t: usize,
@@ -51,6 +55,20 @@ pub fn dimmed(s: &str) -> String {
 fn rows(s: &str) -> usize {
     let cols = cols();
     s.chars().count().max(1).div_ceil(cols)
+}
+
+pub fn tool(tool: &Tool, input: &HashMap<String, Value>) -> String {
+    let disp = (tool.render)(input.clone());
+
+    if let Ok(d) = disp {
+        format!("\x1b[1m{}\x1b[0m", d)
+    } else {
+        format!(
+            "\x1b[1m+ {}({})\x1b[0m",
+            tool.name,
+            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<String>>().join(", "),
+        )
+    }
 }
 
 impl Renderer {
