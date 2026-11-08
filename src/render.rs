@@ -127,7 +127,11 @@ impl Renderer {
         self.write_line(&format!("{s} \x1b[31m✗\x1b[0m"));
     }
 
-    const SPIN_FRAMES: &[&str] = &["⠎⠀", "⠊⠁", "⠈⠑", "⠀⠱", "⠀⡰", "⢀⡠", "⢄⡀", "⢆⠀"];
+    const SPIN_FRAMES: &[&str] = &[
+        "⠀⠑", "⠀⠰", "⠀⡰", "⢀⡠", "⢄⡀", "⢆⠀", "⢎⠀", "⠎⠁",
+        "⠊⠑", "⠈⠱", "⠀⡱", "⢀⡰", "⢄⡠", "⢆⡀", "⠎⠀", "⠊⠁",
+        "⠈⠑", "⠀⠱", "⠀⡠", "⢀⡀", "⢄⠀", "⠆⠀", "⠊⠀", "⠈⠁",
+    ];
 
     pub fn flush(&mut self) {
         print!("{}", self.queue);
