@@ -24,25 +24,13 @@ pub fn format(text: &str) -> String {
         .print_with_writer(Some(&mut syn))
         .unwrap();
 
-    with_bg(&syn)
+    syn
 }
 
 fn cols() -> usize {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)
         .unwrap_or(80)
-}
-
-pub fn with_bg(s: &str) -> String {
-    s.split('\n')
-        .map(|l| {
-            format!(
-                "\x1b[40m{}\x1b[K\x1b[0m",
-                l.replace("\x1b[0m", "\x1b[0m\x1b[40m"),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 pub fn dimmed(s: &str) -> String {
