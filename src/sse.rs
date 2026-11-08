@@ -34,7 +34,10 @@ impl Body {
 
                 match last {
                     Content::Text { cache_control, .. } | Content::ToolResult { cache_control, .. } => {
-                        *cache_control = Some(CacheControl { kind: "ephemeral".to_string() });
+                        *cache_control = Some(CacheControl {
+                            kind: "ephemeral".to_string(),
+                            ttl: "1h".to_string(),
+                        });
                         break;
                     }
                     _ => {}
@@ -97,6 +100,7 @@ pub enum Content {
 pub struct CacheControl {
     #[serde(rename = "type")]
     kind: String,
+    ttl: String,
 }
 
 pub fn req(body: &Body, creds: &Credentials, renderer: Arc<Mutex<Renderer>>) -> Result<Response> {
