@@ -1,12 +1,14 @@
 use quasi::{Agent, Renderer};
-use rustyline::completion::{Completer, Pair};
 
 use std::{env, thread};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::Result;
 use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Validator};
+use rustyline::completion::{Completer, Pair};
+use rustyline::error::ReadlineError;
+
+use anyhow::Result;
 
 const TICK: Duration = Duration::from_millis(30);
 
@@ -69,13 +71,11 @@ fn main() -> Result<()> {
     let mut rl = Editor::new()?;
     rl.set_helper(Some(Complete));
 
-    let mut agent = if let Some(name) = env::args().nth(1) {
-        Agent::load(renderer.clone(), &name)
+    let (mut agent, mut sync) = if let Some(name) = env::args().nth(1) {
+        (Agent::load(renderer.clone(), &name)?, Some(name))
     } else {
-        Agent::new(renderer.clone())
-    }?;
-
-    let mut sync = None;
+        (Agent::new(renderer.clone())?, None)
+    };
 
     loop {
         renderer.lock().unwrap().write_line("");
@@ -138,6 +138,16 @@ fn main() -> Result<()> {
                     }
                 }
             },
+            Err(ReadlineError::Eof) => {
+                if sync.is_none() && !agent.messages.is_empty() {
+                    let id = &format!("{:04x}-{:04x}", rand::random::<u16>(), rand::random::<u16>());
+                    agent.save(id)?;
+                    renderer.lock().unwrap().write_success(&format!("saved to {id}"));
+                    renderer.lock().unwrap().flush();
+                }
+
+                break;
+            }
             _ => break,
         }
     }

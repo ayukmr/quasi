@@ -40,7 +40,7 @@ pub struct Agent {
     creds: Credentials,
     tools: Vec<Tool>,
     system: Vec<Content>,
-    messages: Vec<Message>,
+    pub messages: Vec<Message>,
     pub usage: Usage,
     pub yolo: bool,
 }
