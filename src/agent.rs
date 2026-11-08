@@ -23,7 +23,7 @@ Guidelines:
 - Use read to examine files before editing
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
-- Use bash for file operations like ls, rg (ripgrep), find
+- Use bash for file operations like ls, rg, fd
 - Do not use bash when another tool would work
 - Bash is sandboxed for file writing, do not try to get around it or use python for writing
 - Always use fully qualified paths, ~ will not be expanded to $HOME
