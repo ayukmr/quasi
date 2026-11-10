@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Result, bail};
 use minreq::{Request, ResponseLazy};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages?beta=true";
 
@@ -109,10 +109,31 @@ pub fn req(body: &Body, creds: &Credentials, renderer: Arc<Mutex<Renderer>>) -> 
     renderer.lock().unwrap().set_status(Some("contacting"));
 
     let resp = add_headers(minreq::post(API_URL), creds)
+        .with_header("Accept", "text/event-stream")
         .with_body(json)
         .send_lazy()?;
 
     handle_resp(resp, renderer)
+}
+
+pub fn complete(model: &str, system: &str, user: &str, max_tokens: u32, creds: &Credentials) -> Result<String> {
+    let json = json!({
+        "model": format!("claude-{model}"),
+        "max_tokens": max_tokens,
+        "system": [
+            { "type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude." },
+            { "type": "text", "text": system },
+        ],
+        "messages": [{ "role": "user", "content": user }],
+    }).to_string();
+
+    let resp = add_headers(minreq::post(API_URL), creds)
+        .with_header("Accept", "application/json")
+        .with_body(json)
+        .send()?;
+
+    let v: Value = serde_json::from_str(resp.as_str()?)?;
+    Ok(v["content"][0]["text"].as_str().unwrap_or_default().trim().to_string())
 }
 
 fn add_headers(req: Request, creds: &Credentials) -> Request {
@@ -121,7 +142,6 @@ fn add_headers(req: Request, creds: &Credentials) -> Request {
         .with_header("Anthropic-Version", "2023-06-01")
         .with_header("Anthropic-Beta", "claude-code-20250219,oauth-2025-04-20")
         .with_header("Content-Type", "application/json")
-        .with_header("Accept", "text/event-stream")
         .with_header("User-Agent", "claude-cli/2.1.280")
         .with_header("X-App", "cli")
 }

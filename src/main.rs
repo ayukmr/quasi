@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Validator};
 use rustyline::completion::{Completer, Pair};
-use rustyline::error::ReadlineError;
 
 use anyhow::Result;
 
@@ -71,10 +70,10 @@ fn main() -> Result<()> {
     let mut rl = Editor::new()?;
     rl.set_helper(Some(Complete));
 
-    let (mut agent, mut sync) = if let Some(name) = env::args().nth(1) {
-        (Agent::load(renderer.clone(), &name)?, Some(name))
+    let mut agent = if let Some(name) = env::args().nth(1) {
+        Agent::load(renderer.clone(), &name)?
     } else {
-        (Agent::new(renderer.clone())?, None)
+        Agent::new(renderer.clone())?
     };
 
     loop {
@@ -83,7 +82,7 @@ fn main() -> Result<()> {
 
         let readline = rl.readline(&format!(
             "{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m>\x1b[0m ",
-            sync.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
+            agent.save.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
             agent.thinking,
             agent.usage.input_tokens,
@@ -98,15 +97,8 @@ fn main() -> Result<()> {
                 }
 
                 if let Some(name) = prompt.strip_prefix("/save ") {
-                    agent.save(name)?;
-                    renderer.lock().unwrap().write_success(&format!("saved to {name}"));
-                } else if prompt == "/sync" {
-                    sync = None;
-                    renderer.lock().unwrap().write_error("stopped syncing");
-                } else if let Some(name) = prompt.strip_prefix("/sync ") {
-                    sync = Some(name.to_string());
-                    agent.save(name)?;
-                    renderer.lock().unwrap().write_success(&format!("syncing with {name}"));
+                    agent.update_save(name)?;
+                    renderer.lock().unwrap().write_success(&format!("saving to {name}"));
                 } else if let Some(model) = prompt.strip_prefix("/model ") {
                     if MODELS.contains(&model) {
                         agent.model = model.to_string();
@@ -133,21 +125,9 @@ fn main() -> Result<()> {
                     renderer.lock().unwrap().write_success("reloaded tools");
                 } else {
                     agent.prompt(&prompt)?;
-                    if let Some(ref name) = sync {
-                        agent.save(name)?;
-                    }
+                    agent.save()?;
                 }
             },
-            Err(ReadlineError::Eof) => {
-                if sync.is_none() && !agent.messages.is_empty() {
-                    let id = &format!("{:04x}-{:04x}", rand::random::<u16>(), rand::random::<u16>());
-                    agent.save(id)?;
-                    renderer.lock().unwrap().write_success(&format!("saved to {id}"));
-                    renderer.lock().unwrap().flush();
-                }
-
-                break;
-            }
             _ => break,
         }
     }

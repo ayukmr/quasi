@@ -33,6 +33,11 @@ Guidelines:
 - Never include emojis in your responses, unless explicitly asked
 - Show file paths clearly when working with files";
 
+const SLUG_SYSTEM: &str = r#"Make a specific slug out of the message.
+Do not say anything else other than the slug.
+Examples of valid responses: "renderer-fix", "bird-search", "http-client-test".
+Examples of invalid responses: "", " ", "unrelated-slug", "rnado_Mslug"."#;
+
 pub struct Agent {
     pub model: String,
     pub thinking: String,
@@ -43,6 +48,7 @@ pub struct Agent {
     pub messages: Vec<Message>,
     pub usage: Usage,
     pub yolo: bool,
+    pub save: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -68,6 +74,7 @@ impl Agent {
             messages: Vec::new(),
             usage: Usage { input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 },
             yolo: false,
+            save: None,
         })
     }
 
@@ -117,10 +124,11 @@ impl Agent {
             messages: save.messages,
             usage: save.usage,
             yolo: false,
+            save: Some(name.to_string()),
         })
     }
 
-    pub fn save(&self, name: &str) -> Result<()> {
+    pub fn save(&mut self) -> Result<()> {
         let save = AgentSave {
             model: self.model.clone(),
             system: self.system.clone(),
@@ -128,14 +136,67 @@ impl Agent {
             usage: self.usage,
         };
 
-        let file = format!("{name}.json");
+        let name = self.save
+            .clone()
+            .unwrap_or_else(|| {
+                self.renderer.lock().unwrap().set_status(Some("naming session"));
+
+                let slug = self.get_slug()
+                    .ok()
+                    .and_then(|s| if s.is_empty() { None } else { Some(s) })
+                    .unwrap_or_else(|| {
+                        format!("{:04x}-{:04x}", rand::random::<u16>(), rand::random::<u16>())
+                    });
+
+                self.renderer.lock().unwrap().set_status(None);
+                slug
+            });
+        self.save = Some(name.clone());
+
         let json = serde_json::to_string_pretty(&save)?;
 
+        let file = format!("{}.json", name);
         let dir = utils::state_dir()?;
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(file), json)?;
 
         Ok(())
+    }
+
+    pub fn update_save(&mut self, name: &str) -> Result<()> {
+        if let Some(ref old) = self.save {
+            let dir = utils::state_dir()?;
+            let file = format!("{old}.json");
+            let _ = fs::remove_file(dir.join(file));
+        }
+
+        self.save = Some(name.to_string());
+        self.save()?;
+
+        Ok(())
+    }
+
+    pub fn get_slug(&self) -> Result<String> {
+        let msg =
+            self.messages
+                .first()
+                .and_then(|m| {
+                    m.content.first().and_then(|c| {
+                        match c {
+                            Content::Text { text, .. } => Some(text),
+                            _ => None,
+                        }
+                    })
+                })
+                .context("no message somehow")?;
+
+        sse::complete(
+            "haiku-5-5",
+            SLUG_SYSTEM,
+            msg,
+            8192,
+            &self.creds,
+        )
     }
 
     pub fn reload(&mut self) -> Result<()> {
