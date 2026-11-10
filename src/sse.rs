@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use minreq::{Request, ResponseLazy};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -120,6 +120,7 @@ pub fn complete(model: &str, system: &str, user: &str, max_tokens: u32, creds: &
     let json = json!({
         "model": format!("claude-{model}"),
         "max_tokens": max_tokens,
+        "thinking": { "type": "disabled" },
         "system": [
             { "type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude." },
             { "type": "text", "text": system },
@@ -133,7 +134,7 @@ pub fn complete(model: &str, system: &str, user: &str, max_tokens: u32, creds: &
         .send()?;
 
     let v: Value = serde_json::from_str(resp.as_str()?)?;
-    Ok(v["content"][0]["text"].as_str().unwrap_or_default().trim().to_string())
+    v["content"][0]["text"].as_str().map(|s| s.trim().to_string()).context("invalid complete response")
 }
 
 fn add_headers(req: Request, creds: &Credentials) -> Request {

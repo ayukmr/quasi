@@ -140,12 +140,9 @@ impl Agent {
             .unwrap_or_else(|| {
                 self.renderer.lock().unwrap().set_status(Some("naming session"));
 
-                let slug = self.get_slug()
-                    .ok()
-                    .and_then(|s| if s.is_empty() { None } else { Some(s) })
-                    .unwrap_or_else(|| {
-                        format!("{:04x}-{:04x}", rand::random::<u16>(), rand::random::<u16>())
-                    });
+                let slug = self.get_slug().unwrap_or_else(|_| {
+                    format!("{:04x}-{:04x}", rand::random::<u16>(), rand::random::<u16>())
+                });
 
                 self.renderer.lock().unwrap().set_status(None);
                 slug
