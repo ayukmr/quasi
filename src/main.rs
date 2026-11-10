@@ -30,10 +30,28 @@ impl Completer for Complete {
     type Candidate = Pair;
 
     fn complete(&self, line: &str, pos: usize, _: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
+        let prefix = &line[0..line.find(' ').unwrap_or(0)];
         let up_to = &line[..pos];
         let start = up_to.rfind(' ').map_or(0, |i| i + 1);
+        let cur = &line[start..pos];
 
-        let prefix = &line[0..line.find(' ').unwrap_or(0)];
+        if line[start..].starts_with('@') {
+            let files: Vec<_> =
+                glob::glob(&format!("{}*", &line[start + 1..pos]))
+                    .map(|g| g.filter_map(|f| {
+                        f.map(|p| {
+                            let mut s = p.to_string_lossy().into_owned();
+                            if p.is_dir() {
+                                s += "/";
+                            }
+                            Pair { display: s.clone(), replacement: s }
+                        }).ok()
+                    }).collect())
+                    .unwrap_or_default();
+
+            return Ok((start + 1, files));
+        }
+
         let cmds: Vec<&str> = CMDS.iter().map(|(c, _)| *c).collect();
 
         let poss = if let Some((_, Some(arg))) = CMDS.iter().find(|(c, _)| *c == prefix) {
@@ -43,8 +61,6 @@ impl Completer for Complete {
         } else {
             &[]
         };
-
-        let cur = &line[start..pos];
 
         let matches = poss
             .iter()
