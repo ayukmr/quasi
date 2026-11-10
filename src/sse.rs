@@ -214,7 +214,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
     let mut reader = BufReader::new(resp);
     let mut content = Vec::new();
 
-    let mut line: Vec<u8> = Vec::new();
+    let mut line = Vec::new();
     let mut cur = None;
     let mut rendered = 0;
     let mut json_buf = String::new();
@@ -238,7 +238,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 let stat = match content_block {
                     Content::Text { .. } => "generating",
                     Content::Thinking { .. } | Content::RedactedThinking { .. } => "pondering",
-                    Content::ToolUse { .. } => "drafting",
+                    Content::ToolUse { ref name, .. } => &format!("drafting {name}"),
                     _ => "futzing",
                 };
                 renderer.lock().unwrap().set_status(Some(stat));
@@ -253,7 +253,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 match delta {
                     ContentDelta::TextDelta { delta } => {
                         if let Some(Content::Text { text, .. }) = cur.as_mut() {
-                            text.push_str(&delta);
+                            *text += &delta;
                             let pending = &text[rendered..];
 
                             if !pending.trim().is_empty() {
@@ -265,7 +265,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                     }
                     ContentDelta::ThinkingDelta { delta } => {
                         if let Some(Content::Thinking { thinking, .. }) = cur.as_mut() {
-                            thinking.push_str(&delta);
+                            *thinking += &delta;
                             let pending = &thinking[rendered..];
 
                             if !pending.trim().is_empty() {
@@ -276,11 +276,11 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                     }
                     ContentDelta::SignatureDelta { delta } => {
                         if let Some(Content::Thinking { signature, .. }) = cur.as_mut() {
-                            signature.push_str(&delta);
+                            *signature += &delta;
                         }
                     }
                     ContentDelta::InputJsonDelta { delta } => {
-                        json_buf.push_str(&delta);
+                        json_buf += &delta;
                     }
                 }
             }

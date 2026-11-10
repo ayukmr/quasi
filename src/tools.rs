@@ -285,11 +285,11 @@ fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl
             let mut s = String::new();
 
             if i == 0 {
-                s.push_str(prefix);
+                s += prefix;
             }
-            s.push_str(&format!("\x1b[30;{hl}m{seg}\x1b[{fg};49m"));
+            s += &format!("\x1b[30;{hl}m{seg}\x1b[{fg};49m");
             if i == last {
-                s.push_str(suffix);
+                s += suffix;
             }
 
             format!("\x1b[{fg}m{marker} {s}\x1b[0m")
