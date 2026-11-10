@@ -23,10 +23,9 @@ Guidelines:
 - Use read to examine files before editing
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
-- Use bash for file operations like ls, rg, fd
-- Do not use bash when another tool would work
-- Bash is sandboxed for file writing, do not try to get around it or use python for writing
-- Always use fully qualified paths, ~ will not be expanded to $HOME
+- Use bash for file operations like ls, rg (use instead of grep), fd (use instead of find)
+- Do not use bash to create/modify files (no redirects, tee, sed, anything like python/perl/node) - always use write or edit
+- Paths are assumed to be relative by default, and ~ will not be expanded to $HOME
 - Do not be too eager with writing files - ask the user if it is implied but not said
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses, do not state multiple solutions unless asked
