@@ -1,8 +1,10 @@
+use crate::agent;
 use crate::oauth::Credentials;
 use crate::render::{self, Renderer};
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, bail};
@@ -103,11 +105,12 @@ pub struct CacheControl {
     ttl: String,
 }
 
-pub fn req(body: &Body, creds: &Credentials, renderer: Arc<Mutex<Renderer>>) -> Result<Response> {
-    let json = serde_json::to_string(body)?;
+pub fn req(body: &Body, creds: &mut Credentials, renderer: Arc<Mutex<Renderer>>) -> Result<Response> {
+    creds.ensure(renderer.clone())?;
 
     renderer.lock().unwrap().set_status(Some("contacting"));
 
+    let json = serde_json::to_string(body)?;
     let resp = add_headers(minreq::post(API_URL), creds)
         .with_header("Accept", "text/event-stream")
         .with_body(json)
@@ -116,7 +119,16 @@ pub fn req(body: &Body, creds: &Credentials, renderer: Arc<Mutex<Renderer>>) -> 
     handle_resp(resp, renderer)
 }
 
-pub fn complete(model: &str, system: &str, user: &str, max_tokens: u32, creds: &Credentials) -> Result<String> {
+pub fn complete(
+    model: &str,
+    system: &str,
+    user: &str,
+    max_tokens: u32,
+    creds: &mut Credentials,
+    renderer: Arc<Mutex<Renderer>>,
+) -> Result<String> {
+    creds.ensure(renderer.clone())?;
+
     let json = json!({
         "model": format!("claude-{model}"),
         "max_tokens": max_tokens,
@@ -193,6 +205,8 @@ pub enum StopReason {
     EndTurn,
     ToolUse,
     MaxTokens,
+    // custom
+    Interrupt,
     #[serde(other)]
     Unknown,
 }
@@ -204,7 +218,7 @@ pub struct Response {
     pub usage: Usage,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Usage {
     pub input_tokens: u32,
     pub cache_creation_input_tokens: u32,
@@ -221,8 +235,30 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
     let mut json_buf = String::new();
 
     let (stop_reason, usage) = loop {
-        line.clear();
+        let mut finish = |int: bool| -> Result<()> {
+            let textual = matches!(cur, Some(Content::Text { .. } | Content::Thinking { .. }));
 
+            if (!int || !matches!(cur, Some(Content::ToolUse { .. }))) && let Some(mut c) = cur.take() {
+                if !json_buf.is_empty() && let Content::ToolUse { input, .. } = &mut c {
+                    *input = serde_json::from_str(&json_buf)?;
+                }
+                content.push(c);
+            }
+
+            renderer.lock().unwrap().set_status(None);
+            if textual {
+                renderer.lock().unwrap().finish();
+            }
+
+            Ok(())
+        };
+
+        if agent::INTERRUPTED.load(Ordering::SeqCst) {
+            finish(true)?;
+            break (StopReason::Interrupt, None);
+        }
+
+        line.clear();
         if reader.read_until(b'\n', &mut line)? == 0 {
             bail!("stream ended before message end");
         }
@@ -249,7 +285,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 rendered = 0;
                 json_buf.clear();
             }
-            Event::ContentBlockDelta { index, delta } => {
+            Event::ContentBlockDelta { index: _index, delta } => {
                 // TODO in theory use index
                 match delta {
                     ContentDelta::TextDelta { delta } => {
@@ -286,21 +322,10 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 }
             }
             Event::ContentBlockStop => {
-                if !json_buf.is_empty() && let Some(Content::ToolUse { input, .. }) = cur.as_mut() {
-                    *input = serde_json::from_str(&json_buf)?;
-                }
-
-                let textual = matches!(cur, Some(Content::Text { .. })) || matches!(cur, Some(Content::Thinking { .. }));
-
-                content.push(cur.take().unwrap());
-                renderer.lock().unwrap().set_status(None);
-
-                if textual {
-                    renderer.lock().unwrap().finish();
-                }
+                finish(false)?;
             }
             Event::MessageDelta { delta: MessageDelta { stop_reason }, usage } => {
-                break (stop_reason, usage);
+                break (stop_reason, Some(usage));
             }
             Event::Unknown => {}
         }
@@ -309,6 +334,6 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
     Ok(Response {
         content,
         stop_reason,
-        usage,
+        usage: usage.unwrap_or_else(Usage::default),
     })
 }

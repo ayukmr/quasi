@@ -7,7 +7,7 @@ edition = "2024"
 anyhow = "1.0.104"
 base64 = "0.23.1"
 bat = "0.26.1"
-glob = "0.3.4"
+ctrlc = "3.5.2"
 minreq = { version = "3.0.0", features = ["https"] }
 mlua = { version = "0.12.2", features = ["lua54", "vendored", "serialize"] }
 rand = "0.10.3"

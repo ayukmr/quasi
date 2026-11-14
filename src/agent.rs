@@ -7,9 +7,12 @@ use crate::tools::{self, Tool};
 use std::fs;
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
+
+pub static INTERRUPTED: AtomicBool = AtomicBool::new(false);
 
 const SYSTEM: &str = "You are quasi (`qsi`), an expert coding assistant. You help users with coding tasks by reading files, executing commands, editing code, and writing new files.
 
@@ -25,7 +28,6 @@ Guidelines:
 - Use write only for new files or complete rewrites
 - Use bash for file operations like ls, rg (use instead of grep), fd (use instead of find)
 - Do not use bash to create/modify files (no redirects, tee, sed, anything like python/perl/node) - always use write or edit
-- Paths are assumed to be relative by default, and ~ will not be expanded to $HOME
 - Do not be too eager with writing files - ask the user if it is implied but not said
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses, do not state multiple solutions unless asked
@@ -35,7 +37,7 @@ Guidelines:
 const SLUG_SYSTEM: &str = r#"Make a specific slug out of the message.
 Do not say anything else other than the slug.
 Examples of valid responses: "renderer-fix", "bird-search", "http-client-test".
-Examples of invalid responses: "", " ", "unrelated-slug", "rnado_Mslug"."#;
+Examples of invalid responses: "", " ", "unrelated-slug", "rnado_Mslug", "'quoted slug'"."#;
 
 pub struct Agent {
     pub model: String,
@@ -53,6 +55,7 @@ pub struct Agent {
 #[derive(Deserialize, Serialize)]
 pub struct AgentSave {
     model: String,
+    thinking: String,
     system: Vec<Content>,
     messages: Vec<Message>,
     usage: Usage,
@@ -71,20 +74,20 @@ impl Agent {
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
             ],
             messages: Vec::new(),
-            usage: Usage { input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 0 },
+            usage: Usage::default(),
             yolo: false,
             save: None,
         })
     }
 
     pub fn load(renderer: Arc<Mutex<Renderer>>, name: &str) -> Result<Self> {
-        let file = utils::state_dir()?.join(format!("{name}.json"));
+        let file = utils::state_dir().join(format!("{name}.json"));
         let json = fs::read_to_string(file)?;
         let save: AgentSave = serde_json::from_str(&json)?;
 
         let tools = tools::tools()?;
-        let mut out = String::new();
 
+        let mut out = String::new();
         for msg in &save.messages {
             for cont in &msg.content {
                 match cont {
@@ -116,7 +119,7 @@ impl Agent {
         Ok(Self {
             tools,
             model: save.model,
-            thinking: "medium".to_string(),
+            thinking: save.thinking,
             renderer: renderer.clone(),
             creds: Credentials::get(renderer)?,
             system: save.system,
@@ -130,6 +133,7 @@ impl Agent {
     pub fn save(&mut self) -> Result<()> {
         let save = AgentSave {
             model: self.model.clone(),
+            thinking: self.thinking.clone(),
             system: self.system.clone(),
             messages: self.messages.clone(),
             usage: self.usage,
@@ -139,7 +143,6 @@ impl Agent {
             .clone()
             .unwrap_or_else(|| {
                 self.renderer.lock().unwrap().set_status(Some("naming session"));
-
                 let slug = self.get_slug().unwrap_or_else(|_| {
                     format!("{:04x}-{:04x}", rand::random::<u16>(), rand::random::<u16>())
                 });
@@ -152,7 +155,7 @@ impl Agent {
         let json = serde_json::to_string_pretty(&save)?;
 
         let file = format!("{}.json", name);
-        let dir = utils::state_dir()?;
+        let dir = utils::state_dir();
         fs::create_dir_all(&dir)?;
         fs::write(dir.join(file), json)?;
 
@@ -161,7 +164,7 @@ impl Agent {
 
     pub fn update_save(&mut self, name: &str) -> Result<()> {
         if let Some(ref old) = self.save {
-            let dir = utils::state_dir()?;
+            let dir = utils::state_dir();
             let file = format!("{old}.json");
             let _ = fs::remove_file(dir.join(file));
         }
@@ -172,7 +175,7 @@ impl Agent {
         Ok(())
     }
 
-    pub fn get_slug(&self) -> Result<String> {
+    pub fn get_slug(&mut self) -> Result<String> {
         let msg =
             self.messages
                 .first()
@@ -191,7 +194,8 @@ impl Agent {
             SLUG_SYSTEM,
             msg,
             8192,
-            &self.creds,
+            &mut self.creds,
+            self.renderer.clone(),
         )
     }
 
@@ -216,7 +220,18 @@ impl Agent {
         }
     }
 
+    fn rewind(&mut self) {
+        if let Some(m) = self.messages.last_mut() && matches!(m.role, Role::Assistant) {
+            m.content.retain(|c| matches!(c, Content::Text { .. }));
+            if m.content.is_empty() {
+                self.messages.pop();
+            }
+        }
+    }
+
     pub fn prompt(&mut self, query: &str) -> Result<()> {
+        INTERRUPTED.store(false, Ordering::SeqCst);
+
         self.messages.push(
             Message {
                 role: Role::User,
@@ -225,9 +240,8 @@ impl Agent {
         );
 
         let mut resp;
-
         loop {
-            resp = sse::req(&self.body().add_cache(), &self.creds, self.renderer.clone())?;
+            resp = sse::req(&self.body().add_cache(), &mut self.creds, self.renderer.clone())?;
 
             self.usage.input_tokens += resp.usage.input_tokens;
             self.usage.cache_creation_input_tokens += resp.usage.cache_creation_input_tokens;
@@ -237,14 +251,18 @@ impl Agent {
             let content = &self.messages.last().unwrap().content;
 
             if !matches!(resp.stop_reason, StopReason::ToolUse) {
-                break;
+                self.rewind();
+                return Ok(());
             }
-
             self.renderer.lock().unwrap().set_status(Some("calling tools"));
 
             let mut tool_res = vec![];
-
             for c in content {
+                if INTERRUPTED.load(Ordering::SeqCst) {
+                    self.rewind();
+                    return Ok(());
+                }
+
                 if let Content::ToolUse { id, name, input } = c {
                     let tool = self.tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
 
@@ -274,7 +292,5 @@ impl Agent {
             self.renderer.lock().unwrap().set_status(None);
             self.messages.push(Message { role: Role::User, content: tool_res });
         }
-
-        Ok(())
     }
 }

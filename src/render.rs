@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 
 use bat::PrettyPrinter;
+use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 use serde_json::Value;
 
 pub struct Renderer {
@@ -159,18 +161,19 @@ impl Renderer {
     pub fn confirm(&mut self) -> bool {
         self.flush();
 
+        let mut rl = DefaultEditor::new().unwrap();
         loop {
-            print!("\x1b[31mallow?> \x1b[0m");
-            io::stdout().flush().ok();
-
-            let mut ans = String::new();
-            io::stdin().read_line(&mut ans).unwrap();
-            ans = ans.trim().to_lowercase();
-
-            if ans == "y" || ans == "yes" {
-                return true;
-            } else if ans == "n" || ans == "no" {
-                return false;
+            match rl.readline("\x1b[31mallow? (y/n)> \x1b[0m") {
+                Ok(s) => {
+                    let ans = s.trim().to_lowercase();
+                    if ans == "y" || ans == "yes" {
+                        return true;
+                    } else if ans == "n" || ans == "no" {
+                        return false;
+                    }
+                }
+                Err(ReadlineError::Interrupted | ReadlineError::Eof) => return false,
+                _ => {}
             }
         }
     }

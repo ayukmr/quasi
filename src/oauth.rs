@@ -58,17 +58,22 @@ impl Pkce {
 impl Credentials {
     pub fn get(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
         let mut creds = Self::load().or_else(|_| Self::from_login(renderer.clone()))?;
-
-        if creds.expires < SystemTime::now() {
-            creds.refresh(renderer)?;
-            let _ = creds.save();
-        }
+        creds.ensure(renderer)?;
 
         Ok(creds)
     }
 
+    pub fn ensure(&mut self, renderer: Arc<Mutex<Renderer>>) -> Result<()> {
+        if self.expires < SystemTime::now() {
+            self.refresh(renderer)?;
+            let _ = self.save();
+        }
+
+        Ok(())
+    }
+
     fn load() -> Result<Self> {
-        let file = utils::config_dir()?.join("creds.json");
+        let file = utils::config_dir().join("creds.json");
         let json = fs::read_to_string(file)?;
         let creds = serde_json::from_str(&json)?;
 
@@ -78,7 +83,7 @@ impl Credentials {
     fn save(&self) -> Result<()> {
         let json = serde_json::to_string_pretty(self)?;
 
-        let dir = utils::config_dir()?;
+        let dir = utils::config_dir();
         fs::create_dir_all(&dir)?;
         fs::write(dir.join("creds.json"), json)?;
 

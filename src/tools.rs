@@ -63,7 +63,7 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 pub fn tools() -> Result<Vec<Tool>> {
     let mut tools = Vec::new();
 
-    if let Ok(dir) = utils::tools_dir() && let Ok(entries) = fs::read_dir(dir) {
+    if let Ok(entries) = fs::read_dir(utils::tools_dir()) {
         for entry in entries {
             let path = entry?.path();
             if path.extension().is_none_or(|e| e != "lua") {
@@ -188,7 +188,7 @@ pub fn tools() -> Result<Vec<Tool>> {
 }
 
 fn read(args: HashMap<String, Value>) -> Result<String> {
-    let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
+    let path = utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let offset = args.get("offset").map(|o| o.as_u64().context("offset: wrong type")).transpose()?.unwrap_or(1) as usize;
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?.unwrap_or(2000) as usize;
 
@@ -200,29 +200,30 @@ fn read(args: HashMap<String, Value>) -> Result<String> {
 }
 
 fn render_read(args: HashMap<String, Value>) -> Result<String> {
-    let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
+    let path = utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let offset = args.get("offset").map(|o| o.as_u64().context("offset: wrong type")).transpose()?;
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?;
 
     Ok(format!(
-        "\x1b[1mreading {path}\x1b[0m{}{}",
+        "\x1b[1mreading {}\x1b[0m{}{}",
+        path.to_string_lossy(),
         offset.map_or(String::new(), |o| format!(" @ {o}")),
         limit.map_or(String::new(), |l| format!(" (limit: {l})")),
     ))
 }
 
 fn write(args: HashMap<String, Value>) -> Result<String> {
-    let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
+    let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let content = args.get("content").context("content: omitted")?.as_str().context("content: wrong type")?;
 
     fs::create_dir_all(PathBuf::from(path).parent().unwrap())?;
     fs::write(path, content)?;
 
-    Ok(format!("successfully wrote to {path}"))
+    Ok(format!("successfully wrote to {}", path.to_string_lossy()))
 }
 
 fn render_write(args: HashMap<String, Value>) -> Result<String> {
-    let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
+    let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let content = args.get("content").context("content: omitted")?.as_str().context("content: wrong type")?;
 
     let mut syn = String::new();
@@ -233,11 +234,11 @@ fn render_write(args: HashMap<String, Value>) -> Result<String> {
         .print_with_writer(Some(&mut syn))
         .unwrap();
 
-    Ok(format!("\x1b[1mwriting to {path}:\x1b[0m\n{}", syn.trim()))
+    Ok(format!("\x1b[1mwriting to {}:\x1b[0m\n{}", path.to_string_lossy(), syn.trim()))
 }
 
 fn edit(args: HashMap<String, Value>) -> Result<String> {
-    let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
+    let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let old = args.get("old_text").context("old_text: omitted")?.as_str().context("old_text: wrong type")?;
     let new = args.get("new_text").context("new_text: omitted")?.as_str().context("new_text: wrong type")?;
 
@@ -250,11 +251,11 @@ fn edit(args: HashMap<String, Value>) -> Result<String> {
 
     fs::write(path, replaced)?;
 
-    Ok(format!("successfully replaced text in {path}"))
+    Ok(format!("successfully replaced text in {}", path.to_string_lossy()))
 }
 
 fn render_edit(args: HashMap<String, Value>) -> Result<String> {
-    let path = args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?;
+    let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let old = args.get("old_text").context("old_text: omitted")?.as_str().context("old_text: wrong type")?;
     let new = args.get("new_text").context("new_text: omitted")?.as_str().context("new_text: wrong type")?;
 
@@ -271,7 +272,7 @@ fn render_edit(args: HashMap<String, Value>) -> Result<String> {
     let diff_old = format_diff(prefix, suffix, old, "-", "31", "41");
     let diff_new = format_diff(prefix, suffix, new, "+", "32", "42");
 
-    Ok(format!("\x1b[1mediting {path}:\x1b[0m\n{diff_old}\n{diff_new}"))
+    Ok(format!("\x1b[1mediting {}:\x1b[0m\n{diff_old}\n{diff_new}", path.to_string_lossy()))
 }
 
 fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl: &str) -> String {

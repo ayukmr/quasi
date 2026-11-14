@@ -1,22 +1,21 @@
-use quasi::{Agent, Renderer};
+use quasi::{agent, utils, Agent, Renderer};
+use rustyline::error::ReadlineError;
 
-use std::{env, thread};
+use std::{env, fs, thread};
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use anyhow::Result;
 use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Validator};
 use rustyline::completion::{Completer, Pair};
-
-use anyhow::Result;
-
-const TICK: Duration = Duration::from_millis(30);
 
 const MODELS: &[&str] = &["fable-5-1", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
 const THINKS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
 const CMDS: &[(&str, Option<&[&str]>)] = &[
     ("/save", None),
-    ("/sync", None),
     ("/model", Some(MODELS)),
     ("/think", Some(THINKS)),
     ("/yolo", None),
@@ -36,18 +35,42 @@ impl Completer for Complete {
         let cur = &line[start..pos];
 
         if line[start..].starts_with('@') {
-            let files: Vec<_> =
-                glob::glob(&format!("{}*", &line[start + 1..pos]))
-                    .map(|g| g.filter_map(|f| {
-                        f.map(|p| {
-                            let mut s = p.to_string_lossy().into_owned();
-                            if p.is_dir() {
-                                s += "/";
-                            }
-                            Pair { display: s.clone(), replacement: s }
-                        }).ok()
-                    }).collect())
-                    .unwrap_or_default();
+            let prefix: &str = &line[start + 1..pos];
+
+            let raw = PathBuf::from(prefix);
+            let (base, name_prefix) = if prefix.is_empty() || prefix.ends_with("/") {
+                (raw, "")
+            } else {
+                (
+                    raw.parent().unwrap_or(Path::new(".")).to_path_buf(),
+                    raw.file_name().and_then(|s| s.to_str()).unwrap_or(""),
+                )
+            };
+
+            let mut dir = utils::expand_tilde_path(&base);
+            if dir.is_relative() {
+                let cwd = env::current_dir()?;
+                dir = Path::join(cwd.as_path(), dir);
+            }
+
+            let Ok(entries) = fs::read_dir(dir) else {
+                return Ok((start + 1, Vec::new()));
+            };
+
+            let files = entries
+                .filter_map(Result::ok)
+                .filter(|e| e.file_name().to_string_lossy().starts_with(name_prefix))
+                .map(|e| {
+                    let p = e.path();
+
+                    let mut s = base.join(p.file_name().unwrap()).to_string_lossy().to_string();
+                    if p.is_dir() {
+                        s += "/";
+                    }
+
+                    Pair { display: s.clone(), replacement: s }
+                })
+                .collect();
 
             return Ok((start + 1, files));
         }
@@ -72,13 +95,17 @@ impl Completer for Complete {
     }
 }
 
+const TICK: Duration = Duration::from_millis(30);
+
 fn main() -> Result<()> {
     let renderer = Arc::new(Mutex::new(Renderer::new()));
-    let renderer_cln = renderer.clone();
+    let renderer2 = renderer.clone();
+
+    ctrlc::set_handler(move || agent::INTERRUPTED.store(true, Ordering::SeqCst))?;
 
     thread::spawn(move || {
         loop {
-            renderer_cln.lock().unwrap().tick();
+            renderer2.lock().unwrap().tick();
             thread::sleep(TICK);
         }
     });
@@ -97,7 +124,8 @@ fn main() -> Result<()> {
         renderer.lock().unwrap().flush();
 
         let readline = rl.readline(&format!(
-            "{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m>\x1b[0m ",
+            "{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m>\x1b[0m ",
+            if agent::INTERRUPTED.load(Ordering::SeqCst) { "\x1b[31m^C\x1b[0m · " } else { "" },
             agent.save.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
             agent.thinking,
@@ -143,8 +171,9 @@ fn main() -> Result<()> {
                     agent.prompt(&prompt)?;
                     agent.save()?;
                 }
-            },
-            _ => break,
+            }
+            Err(ReadlineError::Eof) => break,
+            _ => continue,
         }
     }
 
