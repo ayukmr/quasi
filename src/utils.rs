@@ -42,3 +42,24 @@ pub fn compact_tilde(p: &Path) -> String {
         p.to_path_buf()
     }.to_string_lossy().to_string()
 }
+
+pub fn set_echo(on: bool) {
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(libc::STDIN_FILENO, &mut t) != 0 {
+            return;
+        }
+
+        if on {
+            t.c_lflag |= libc::ECHO;
+        } else {
+            t.c_lflag &= !libc::ECHO;
+        }
+
+        libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &t);
+    }
+}
+
+pub fn flush_input() {
+    unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH); }
+}

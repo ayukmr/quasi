@@ -123,6 +123,8 @@ fn main() -> Result<()> {
         renderer.lock().unwrap().write_line("");
         renderer.lock().unwrap().flush();
 
+        utils::flush_input();
+        utils::set_echo(true);
         let readline = rl.readline(&format!(
             "{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m>\x1b[0m ",
             if agent::INTERRUPTED.load(Ordering::SeqCst) { "\x1b[31m^C\x1b[0m · " } else { "" },
@@ -133,6 +135,7 @@ fn main() -> Result<()> {
             agent.usage.cache_creation_input_tokens,
             agent.usage.output_tokens,
         ));
+        utils::set_echo(false);
 
         match readline {
             Ok(prompt) => {

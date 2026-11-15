@@ -1,3 +1,4 @@
+use crate::utils;
 use crate::tools::Tool;
 
 use std::collections::HashMap;
@@ -161,14 +162,19 @@ impl Renderer {
     pub fn confirm(&mut self) -> bool {
         self.flush();
 
+        utils::flush_input();
+        utils::set_echo(true);
         let mut rl = DefaultEditor::new().unwrap();
+
         loop {
             match rl.readline("\x1b[31mallow? (y/n)> \x1b[0m") {
                 Ok(s) => {
                     let ans = s.trim().to_lowercase();
                     if ans == "y" || ans == "yes" {
+                        utils::set_echo(false);
                         return true;
                     } else if ans == "n" || ans == "no" {
+                        utils::set_echo(false);
                         return false;
                     }
                 }
