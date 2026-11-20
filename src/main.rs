@@ -57,7 +57,7 @@ impl Completer for Complete {
                 return Ok((start + 1, Vec::new()));
             };
 
-            let files = entries
+            let mut files: Vec<Pair> = entries
                 .filter_map(Result::ok)
                 .filter(|e| e.file_name().to_string_lossy().starts_with(name_prefix))
                 .map(|e| {
@@ -72,6 +72,8 @@ impl Completer for Complete {
                 })
                 .collect();
 
+            files.sort_by(|a, b| a.display.len().cmp(&b.display.len()));
+
             return Ok((start + 1, files));
         }
 
@@ -85,11 +87,13 @@ impl Completer for Complete {
             &[]
         };
 
-        let matches = poss
+        let mut matches: Vec<Pair> = poss
             .iter()
             .filter(|c| c.starts_with(cur))
             .map(|c| Pair { display: c.to_string(), replacement: c.to_string() })
             .collect();
+
+        matches.sort_by(|a, b| a.display.len().cmp(&b.display.len()));
 
         Ok((start, matches))
     }

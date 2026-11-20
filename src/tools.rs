@@ -1,8 +1,8 @@
-use crate::utils;
+use crate::{render, utils};
 
 use std::{collections::HashMap, path::PathBuf};
 use std::fs;
-use std::process::Command;
+use std::process::{Command, Output};
 
 use anyhow::{Context, Result, anyhow, bail};
 use bat::{Input, PrettyPrinter};
@@ -173,7 +173,7 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "bash",
-            "Execute a bash command in the current working directory. Returns stdout and stderr.",
+            "Execute a read-only bash command in the current working directory. Read-only sandbox, any file write fails with 'Operation not permitted'. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
@@ -181,6 +181,20 @@ pub fn tools() -> Result<Vec<Tool>> {
             false,
             Box::new(bash),
             Box::new(render_bash),
+        )
+    );
+
+    tools.push(
+        Tool::create(
+            "bash_write",
+            "Execute a bash command with write access in the current working directory. Use only when a command must write: builds, tests, installs. Use edit/write to change files. Returns stdout and stderr.",
+            vec![
+                ("command", "string", "Bash command to execute"),
+            ],
+            vec!["command"],
+            true,
+            Box::new(bash_write),
+            Box::new(render_bash_write),
         )
     );
 
@@ -193,10 +207,14 @@ fn read(args: HashMap<String, Value>) -> Result<String> {
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?.unwrap_or(2000) as usize;
 
     let content = fs::read_to_string(path)?;
-    let lines = content.split('\n').skip(offset.saturating_sub(1));
-    let out: Vec<&str> = lines.take(limit).collect();
 
-    Ok(out.join("\n"))
+    let all: Vec<&str> = content.lines().collect();
+    let total = all.len();
+
+    let out: Vec<&str> = all.into_iter().skip(offset.saturating_sub(1)).take(limit).collect();
+    let end = offset + out.len() - 1;
+
+    Ok(format!("{}\n[lines {offset}-{end} of {total}]", out.join("\n")))
 }
 
 fn render_read(args: HashMap<String, Value>) -> Result<String> {
@@ -299,6 +317,17 @@ fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl
         .join("\n")
 }
 
+fn bash_helper(output: Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let code = output.status.code().map_or(
+        "terminated by signal".to_string(),
+        |c| format!("status code: {c}"),
+    );
+
+    format!("stdout: {stdout}\nstderr: {stderr}\n{code}")
+}
+
 const SANDBOX: &str = r#"(version 1)
 (allow default)
 
@@ -319,14 +348,27 @@ fn bash(args: HashMap<String, Value>) -> Result<String> {
         .args(["bash", "-c", command])
         .output()?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    Ok(format!("stdout: {stdout}\nstderr: {stderr}"))
+    Ok(bash_helper(output))
 }
 
 fn render_bash(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
-    Ok(format!("\x1b[1m$ {command}\x1b[0m"))
+    Ok(format!("\x1b[1m$\x1b[0m {}", render::format(command, "bash")))
+}
+
+fn bash_write(args: HashMap<String, Value>) -> Result<String> {
+    let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
+
+    let output = Command::new("bash")
+        .args(["-c", command])
+        .output()?;
+
+    Ok(bash_helper(output))
+}
+
+fn render_bash_write(args: HashMap<String, Value>) -> Result<String> {
+    let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
+
+    Ok(format!("\x1b[1;31m$\x1b[0m {}", render::format(command, "bash")))
 }

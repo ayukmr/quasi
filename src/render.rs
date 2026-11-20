@@ -17,11 +17,11 @@ pub struct Renderer {
     queue: String,
 }
 
-pub fn format(text: &str) -> String {
+pub fn format(text: &str, lang: &str) -> String {
     let mut syn = String::new();
     PrettyPrinter::new()
         .input_from_bytes(text.as_bytes())
-        .language("markdown")
+        .language(lang)
         .theme("base16")
         .colored_output(true)
         .print_with_writer(Some(&mut syn))

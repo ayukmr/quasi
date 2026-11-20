@@ -294,7 +294,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                             let pending = &text[rendered..];
 
                             if !pending.trim().is_empty() {
-                                let full = render::format(text);
+                                let full = render::format(text, "markdown");
                                 renderer.lock().unwrap().write_pretty(pending, &full);
                                 rendered = text.len();
                             }
