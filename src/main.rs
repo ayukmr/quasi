@@ -19,6 +19,7 @@ const CMDS: &[(&str, Option<&[&str]>)] = &[
     ("/model", Some(MODELS)),
     ("/think", Some(THINKS)),
     ("/yolo", None),
+    ("/incognito", None),
     ("/reload", None),
 ];
 
@@ -123,6 +124,8 @@ fn main() -> Result<()> {
         Agent::new(renderer.clone())?
     };
 
+    let mut incognito = false;
+
     loop {
         renderer.lock().unwrap().write_line("");
         renderer.lock().unwrap().flush();
@@ -130,8 +133,9 @@ fn main() -> Result<()> {
         utils::flush_input();
         utils::set_echo(true);
         let readline = rl.readline(&format!(
-            "{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m>\x1b[0m ",
+            "{}{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m❱\x1b[0m ",
             if agent::INTERRUPTED.load(Ordering::SeqCst) { "\x1b[31m^C\x1b[0m · " } else { "" },
+            if incognito { "◌ · " } else { "" },
             agent.save.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
             agent.thinking,
@@ -172,12 +176,21 @@ fn main() -> Result<()> {
                         } else {
                             renderer.lock().unwrap().write_error("yolo disabled");
                         }
+                    } else if prompt == "/incognito" {
+                        incognito = !incognito;
+                        if incognito {
+                            renderer.lock().unwrap().write_success("incognito enabled");
+                        } else {
+                            renderer.lock().unwrap().write_error("incognito disabled");
+                        }
                     } else if prompt == "/reload" {
                         agent.reload()?;
                         renderer.lock().unwrap().write_success("reloaded tools");
                     } else {
                         agent.prompt(&prompt)?;
-                        agent.save()?;
+                        if !incognito {
+                            agent.save()?;
+                        }
                     }
 
                     Ok(())
