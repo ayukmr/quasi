@@ -147,36 +147,45 @@ fn main() -> Result<()> {
                     continue;
                 }
 
-                if let Some(name) = prompt.strip_prefix("/save ") {
-                    agent.update_save(name)?;
-                    renderer.lock().unwrap().write_success(&format!("saving to {name}"));
-                } else if let Some(model) = prompt.strip_prefix("/model ") {
-                    if MODELS.contains(&model) {
-                        agent.model = model.to_string();
-                        renderer.lock().unwrap().write_success(&format!("model set to {model}"));
+                let res = (|| -> Result<()> {
+                    if let Some(name) = prompt.strip_prefix("/save ") {
+                        agent.update_save(name)?;
+                        renderer.lock().unwrap().write_success(&format!("saving to {name}"));
+                    } else if let Some(model) = prompt.strip_prefix("/model ") {
+                        if MODELS.contains(&model) {
+                            agent.model = model.to_string();
+                            renderer.lock().unwrap().write_success(&format!("model set to {model}"));
+                        } else {
+                            renderer.lock().unwrap().write_error(&format!("invalid model id '{model}'"));
+                        }
+                    } else if let Some(think) = prompt.strip_prefix("/think ") {
+                        if THINKS.contains(&think) {
+                            agent.thinking = think.to_string();
+                            renderer.lock().unwrap().write_success(&format!("thinking set to {think}"));
+                        } else {
+                            renderer.lock().unwrap().write_error(&format!("invalid thinking level '{think}'"));
+                        }
+                    } else if prompt == "/yolo" {
+                        agent.yolo = !agent.yolo;
+                        if agent.yolo {
+                            renderer.lock().unwrap().write_success("yolo enabled");
+                        } else {
+                            renderer.lock().unwrap().write_error("yolo disabled");
+                        }
+                    } else if prompt == "/reload" {
+                        agent.reload()?;
+                        renderer.lock().unwrap().write_success("reloaded tools");
                     } else {
-                        renderer.lock().unwrap().write_error(&format!("invalid model id '{model}'"));
+                        agent.prompt(&prompt)?;
+                        agent.save()?;
                     }
-                } else if let Some(think) = prompt.strip_prefix("/think ") {
-                    if THINKS.contains(&think) {
-                        agent.thinking = think.to_string();
-                        renderer.lock().unwrap().write_success(&format!("thinking set to {think}"));
-                    } else {
-                        renderer.lock().unwrap().write_error(&format!("invalid thinking level '{think}'"));
-                    }
-                } else if prompt == "/yolo" {
-                    agent.yolo = !agent.yolo;
-                    if agent.yolo {
-                        renderer.lock().unwrap().write_success("yolo enabled");
-                    } else {
-                        renderer.lock().unwrap().write_error("yolo disabled");
-                    }
-                } else if prompt == "/reload" {
-                    agent.reload()?;
-                    renderer.lock().unwrap().write_success("reloaded tools");
-                } else {
-                    agent.prompt(&prompt)?;
-                    agent.save()?;
+
+                    Ok(())
+                })();
+
+                if let Err(e) = res {
+                    renderer.lock().unwrap().set_status(None);
+                    renderer.lock().unwrap().write_error(&format!("{e:#}"));
                 }
             }
             Err(ReadlineError::Eof) => break,

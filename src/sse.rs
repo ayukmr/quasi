@@ -3,7 +3,7 @@ use crate::oauth::Credentials;
 use crate::render::{self, Renderer};
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
@@ -84,9 +84,18 @@ pub enum Content {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
-    Thinking { thinking: String, signature: String },
+    Thinking {
+        thinking: String,
+        #[serde(default)]
+        signature: String,
+    },
     RedactedThinking { data: String },
-    ToolUse { id: String, name: String, input: HashMap<String, Value> },
+    ToolUse {
+        id: String,
+        name: String,
+        #[serde(default)]
+        input: HashMap<String, Value>,
+    },
     ToolResult {
         tool_use_id: String,
         content: String,
@@ -115,6 +124,16 @@ pub fn req(body: &Body, creds: &mut Credentials, renderer: Arc<Mutex<Renderer>>)
         .with_header("Accept", "text/event-stream")
         .with_body(json)
         .send_lazy()?;
+
+    let stat = resp.status_code;
+    if !(200..300).contains(&stat) {
+        let mut reader = BufReader::new(resp);
+        let mut line = Vec::new();
+        reader.read_to_end(&mut line)?;
+        let msg = String::from_utf8_lossy(&line);
+
+        bail!("api status {stat}: {msg}");
+    }
 
     handle_resp(resp, renderer)
 }
@@ -220,7 +239,9 @@ pub struct Response {
 
 #[derive(Copy, Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Usage {
+    #[serde(default)]
     pub input_tokens: u32,
+    #[serde(default)]
     pub cache_creation_input_tokens: u32,
     pub output_tokens: u32,
 }
@@ -240,7 +261,8 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
 
             if (!int || !matches!(cur, Some(Content::ToolUse { .. }))) && let Some(mut c) = cur.take() {
                 if !json_buf.is_empty() && let Content::ToolUse { input, .. } = &mut c {
-                    *input = serde_json::from_str(&json_buf)?;
+                    *input = serde_json::from_str(&json_buf)
+                        .with_context(|| format!("failed to parse: {json_buf}"))?;
                 }
                 content.push(c);
             }
@@ -268,10 +290,13 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
             continue;
         };
 
-        let event: Event = serde_json::from_str(json)?;
+        let event: Event = serde_json::from_str(json)
+            .with_context(|| format!("failed to parse: {}", json.trim_end()))?;
 
         match event {
             Event::ContentBlockStart { content_block } => {
+                finish(false)?;
+
                 let stat = match content_block {
                     Content::Text { .. } => "generating",
                     Content::Thinking { .. } | Content::RedactedThinking { .. } => "pondering",
