@@ -211,6 +211,10 @@ fn read(args: HashMap<String, Value>) -> Result<String> {
     let all: Vec<&str> = content.lines().collect();
     let total = all.len();
 
+    if offset > total {
+        bail!("offset {offset} is past total lines {total}");
+    }
+
     let out: Vec<&str> = all.into_iter().skip(offset.saturating_sub(1)).take(limit).collect();
     let end = offset + out.len() - 1;
 

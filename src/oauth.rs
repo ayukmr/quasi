@@ -57,10 +57,7 @@ impl Pkce {
 
 impl Credentials {
     pub fn get(renderer: Arc<Mutex<Renderer>>) -> Result<Self> {
-        let mut creds = Self::load().or_else(|_| Self::from_login(renderer.clone()))?;
-        creds.ensure(renderer)?;
-
-        Ok(creds)
+        Self::load().or_else(|_| Self::from_login(renderer.clone()))
     }
 
     pub fn ensure(&mut self, renderer: Arc<Mutex<Renderer>>) -> Result<()> {
