@@ -88,7 +88,7 @@ impl Agent {
                     Content::Text { text, .. } => {
                         match msg.role {
                             Role::User => {
-                                writeln!(out, "\n\x1b[35m>\x1b[0m {text}").unwrap();
+                                writeln!(out, "\n\x1b[35m❱\x1b[0m {text}").unwrap();
                             }
                             Role::Assistant => {
                                 writeln!(out, "{}", render::format(text, "markdown")).unwrap();
