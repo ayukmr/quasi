@@ -1,3 +1,5 @@
+use crate::sse::Content;
+
 use std::{env, path::Path};
 use std::path::PathBuf;
 
@@ -62,4 +64,8 @@ pub fn set_echo(on: bool) {
 
 pub fn flush_input() {
     unsafe { libc::tcflush(libc::STDIN_FILENO, libc::TCIFLUSH); }
+}
+
+pub fn text(s: String) -> Vec<Content> {
+    vec![Content::Text { text: s, cache_control: None }]
 }

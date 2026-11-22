@@ -1,3 +1,4 @@
+use crate::sse::{Content, ImageSource};
 use crate::{render, utils};
 
 use std::{collections::HashMap, path::PathBuf};
@@ -5,7 +6,10 @@ use std::fs;
 use std::process::{Command, Output};
 
 use anyhow::{Context, Result, anyhow, bail};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use bat::{Input, PrettyPrinter};
+use infer::MatcherType;
 use mlua::{Function, Lua, LuaSerdeExt, Table};
 use serde_json::{Value, json};
 
@@ -15,7 +19,7 @@ pub struct Tool {
     pub params: Vec<(String, String, String)>,
     pub required: Vec<String>,
     pub dangerous: bool,
-    pub call: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
+    pub call: Box<dyn Fn(HashMap<String, Value>) -> Result<Vec<Content>>>,
     pub render: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
 }
 
@@ -26,7 +30,7 @@ impl Tool {
         params: Vec<(&str, &str, &str)>,
         required: Vec<&str>,
         dangerous: bool,
-        call: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
+        call: Box<dyn Fn(HashMap<String, Value>) -> Result<Vec<Content>>>,
         render: Box<dyn Fn(HashMap<String, Value>) -> Result<String>>,
     ) -> Self {
         Self {
@@ -100,7 +104,8 @@ pub fn tools() -> Result<Vec<Tool>> {
             let lua_c = lua.clone();
             let call_box = Box::new(move |args| {
                 let arg = lua_c.to_value(&args).map_err(lua_err)?;
-                call.call(arg).map_err(lua_err)
+                let out = call.call(arg).map_err(lua_err)?;
+                Ok(utils::text(out))
             });
 
             let lua_r = lua.clone();
@@ -126,11 +131,11 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "read",
-            "Read the contents of a file. For text files, defaults to first 2000 lines. Use offset/limit for large files.",
+            "Read the contents of a file. For text files, defaults to first 2000 lines. For image files, reads the entire file. Use offset/limit for large files.",
             vec![
                 ("path", "string", "Path to the file to read (relative or absolute)"),
-                ("offset", "number", "Line number to start reading from (1-indexed)"),
-                ("limit", "number", "Maximum number of lines to read"),
+                ("offset", "number", "Line number to start reading from (1-indexed). Do not specify for images"),
+                ("limit", "number", "Maximum number of lines to read. Do not specify for images"),
             ],
             vec!["path"],
             false,
@@ -201,24 +206,46 @@ pub fn tools() -> Result<Vec<Tool>> {
     Ok(tools)
 }
 
-fn read(args: HashMap<String, Value>) -> Result<String> {
+fn read(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     let path = utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
-    let offset = args.get("offset").map(|o| o.as_u64().context("offset: wrong type")).transpose()?.unwrap_or(1) as usize;
-    let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?.unwrap_or(2000) as usize;
+    let offset = args.get("offset").map(|o| o.as_u64().context("offset: wrong type")).transpose()?;
+    let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?;
 
-    let content = fs::read_to_string(path)?;
+    let content = fs::read(path)?;
 
-    let all: Vec<&str> = content.lines().collect();
-    let total = all.len();
+    let img_mime = infer::get(&content)
+        .filter(|t| t.matcher_type() == MatcherType::Image)
+        .map(|t| t.mime_type());
 
-    if offset > total {
-        bail!("offset {offset} is past total lines {total}");
+    if let Some(mime) = img_mime {
+        if offset.is_some() || limit.is_some() {
+            bail!("offset or limit specified for image file");
+        }
+
+        Ok(vec![Content::Image {
+            source: ImageSource {
+                kind: "base64".to_string(),
+                media_type: mime.to_string(),
+                data: BASE64_STANDARD.encode(content),
+            }
+        }])
+    } else {
+        let offset = offset.unwrap_or(1) as usize;
+        let limit = limit.unwrap_or(2000) as usize;
+        let content = String::from_utf8_lossy(&content);
+
+        let all: Vec<&str> = content.lines().collect();
+        let total = all.len();
+
+        if offset > total {
+            bail!("offset {offset} is past total lines {total}");
+        }
+
+        let out: Vec<&str> = all.into_iter().skip(offset.saturating_sub(1)).take(limit).collect();
+        let end = offset + out.len() - 1;
+
+        Ok(utils::text(format!("{}\n[lines {offset}-{end} of {total}]", out.join("\n"))))
     }
-
-    let out: Vec<&str> = all.into_iter().skip(offset.saturating_sub(1)).take(limit).collect();
-    let end = offset + out.len() - 1;
-
-    Ok(format!("{}\n[lines {offset}-{end} of {total}]", out.join("\n")))
 }
 
 fn render_read(args: HashMap<String, Value>) -> Result<String> {
@@ -234,14 +261,14 @@ fn render_read(args: HashMap<String, Value>) -> Result<String> {
     ))
 }
 
-fn write(args: HashMap<String, Value>) -> Result<String> {
+fn write(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let content = args.get("content").context("content: omitted")?.as_str().context("content: wrong type")?;
 
     fs::create_dir_all(PathBuf::from(path).parent().unwrap())?;
     fs::write(path, content)?;
 
-    Ok(format!("successfully wrote to {}", path.to_string_lossy()))
+    Ok(utils::text(format!("successfully wrote to {}", path.to_string_lossy())))
 }
 
 fn render_write(args: HashMap<String, Value>) -> Result<String> {
@@ -259,7 +286,7 @@ fn render_write(args: HashMap<String, Value>) -> Result<String> {
     Ok(format!("\x1b[1mwriting to {}:\x1b[0m\n{}", path.to_string_lossy(), syn.trim()))
 }
 
-fn edit(args: HashMap<String, Value>) -> Result<String> {
+fn edit(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let old = args.get("old_text").context("old_text: omitted")?.as_str().context("old_text: wrong type")?;
     let new = args.get("new_text").context("new_text: omitted")?.as_str().context("new_text: wrong type")?;
@@ -273,7 +300,7 @@ fn edit(args: HashMap<String, Value>) -> Result<String> {
 
     fs::write(path, replaced)?;
 
-    Ok(format!("successfully replaced text in {}", path.to_string_lossy()))
+    Ok(utils::text(format!("successfully replaced text in {}", path.to_string_lossy())))
 }
 
 fn render_edit(args: HashMap<String, Value>) -> Result<String> {
@@ -321,7 +348,7 @@ fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl
         .join("\n")
 }
 
-fn bash_helper(output: Output) -> String {
+fn bash_helper(output: Output) -> Vec<Content> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let code = output.status.code().map_or(
@@ -329,7 +356,7 @@ fn bash_helper(output: Output) -> String {
         |c| format!("status code: {c}"),
     );
 
-    format!("stdout: {stdout}\nstderr: {stderr}\n{code}")
+    utils::text(format!("stdout: {stdout}\nstderr: {stderr}\n{code}"))
 }
 
 const SANDBOX: &str = r#"(version 1)
@@ -344,7 +371,7 @@ const SANDBOX: &str = r#"(version 1)
   (regex #"^/dev/tty")
   (regex #"^/dev/fd/"))"#;
 
-fn bash(args: HashMap<String, Value>) -> Result<String> {
+fn bash(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
     let output = Command::new("sandbox-exec")
@@ -361,7 +388,7 @@ fn render_bash(args: HashMap<String, Value>) -> Result<String> {
     Ok(format!("\x1b[1m$\x1b[0m {}", render::format(command, "bash")))
 }
 
-fn bash_write(args: HashMap<String, Value>) -> Result<String> {
+fn bash_write(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
     let output = Command::new("bash")

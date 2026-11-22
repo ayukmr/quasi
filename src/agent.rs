@@ -21,6 +21,7 @@ Guidelines:
 - Use edit for precise changes (old text must match exactly)
 - Use write only for new files or complete rewrites
 - Use bash for file operations like ls, rg (use instead of grep), fd (use instead of find)
+- View images by writing to a file and using read
 - Do not be too eager with writing files - ask the user if it is implied but not said
 - When summarizing your actions, output plain text directly - do NOT use cat or bash to display what you did
 - Be concise in your responses, do not state multiple solutions unless asked
@@ -265,9 +266,9 @@ impl Agent {
                             let resp = (tool.call)(input.clone());
                             let is_err = resp.is_err();
 
-                            (resp.unwrap_or_else(|e| format!("error: {}", e)), is_err)
+                            (resp.unwrap_or_else(|e| utils::text(format!("error: {}", e))), is_err)
                         } else {
-                            ("error: tool denied by user".to_string(), true)
+                            (utils::text("error: tool denied by user".to_string()), true)
                         };
 
                     tool_res.push(

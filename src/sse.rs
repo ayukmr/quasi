@@ -84,6 +84,7 @@ pub enum Content {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
+    Image { source: ImageSource, },
     Thinking {
         thinking: String,
         #[serde(default)]
@@ -98,7 +99,7 @@ pub enum Content {
     },
     ToolResult {
         tool_use_id: String,
-        content: String,
+        content: Vec<Content>,
         is_error: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
@@ -112,6 +113,14 @@ pub struct CacheControl {
     #[serde(rename = "type")]
     kind: String,
     ttl: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ImageSource {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub media_type: String,
+    pub data: String,
 }
 
 pub fn req(body: &Body, creds: &mut Credentials, renderer: Arc<Mutex<Renderer>>) -> Result<Response> {
