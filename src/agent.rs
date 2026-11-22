@@ -1,7 +1,7 @@
 use crate::{render, utils};
 use crate::oauth::Credentials;
 use crate::render::Renderer;
-use crate::sse::{self, Body, Content, Message, OutputConfig, Role, StopReason, Thinking, Usage};
+use crate::sse::{self, Body, Content, Message, StrContent, OutputConfig, Role, StopReason, Thinking, Usage};
 use crate::tools::{self, Tool};
 
 use std::fs;
@@ -232,9 +232,8 @@ impl Agent {
             }
         );
 
-        let mut resp;
         loop {
-            resp = sse::req(&self.body().add_cache(), &mut self.creds, self.renderer.clone())?;
+            let resp = sse::req(&self.body().add_cache(), &mut self.creds, self.renderer.clone())?;
 
             self.usage.input_tokens += resp.usage.input_tokens;
             self.usage.cache_creation_input_tokens += resp.usage.cache_creation_input_tokens;
@@ -273,7 +272,7 @@ impl Agent {
 
                     tool_res.push(
                         Content::ToolResult {
-                            content,
+                            content: StrContent::Content(content),
                             is_error,
                             tool_use_id: id.to_string(),
                             cache_control: None,

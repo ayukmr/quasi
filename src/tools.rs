@@ -1,4 +1,4 @@
-use crate::sse::{Content, ImageSource};
+use crate::sse::{Content, FileSource, StrContent};
 use crate::{render, utils};
 
 use std::{collections::HashMap, path::PathBuf};
@@ -104,8 +104,12 @@ pub fn tools() -> Result<Vec<Tool>> {
             let lua_c = lua.clone();
             let call_box = Box::new(move |args| {
                 let arg = lua_c.to_value(&args).map_err(lua_err)?;
+
                 let out = call.call(arg).map_err(lua_err)?;
-                Ok(utils::text(out))
+                match lua_c.from_value(out).map_err(lua_err)? {
+                    StrContent::Str(s) => Ok(utils::text(s)),
+                    StrContent::Content(c) => Ok(c),
+                }
             });
 
             let lua_r = lua.clone();
@@ -131,7 +135,7 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "read",
-            "Read the contents of a file. For text files, defaults to first 2000 lines. For image files, reads the entire file. Use offset/limit for large files.",
+            "Read the contents of a text/image/PDF file. For text files, defaults to first 2000 lines. For image/PDF files, reads the entire file. Use offset/limit for large files.",
             vec![
                 ("path", "string", "Path to the file to read (relative or absolute)"),
                 ("offset", "number", "Line number to start reading from (1-indexed). Do not specify for images"),
@@ -192,7 +196,7 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "bash_write",
-            "Execute a bash command with write access in the current working directory. Use only when a command must write: builds, tests, installs. Use edit/write to change files. Returns stdout and stderr.",
+            "Execute a bash command with write access in the current working directory. Use only when a command must write: builds, tests, installs. Do not use to change files, use edit/write instead. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
@@ -213,21 +217,27 @@ fn read(args: HashMap<String, Value>) -> Result<Vec<Content>> {
 
     let content = fs::read(path)?;
 
-    let img_mime = infer::get(&content)
-        .filter(|t| t.matcher_type() == MatcherType::Image)
-        .map(|t| t.mime_type());
+    let media = infer::get(&content).and_then(|t| match (t.matcher_type(), t.mime_type()) {
+        (MatcherType::Image, m) => Some(("image", m)),
+        (MatcherType::Archive, m @ "application/pdf") => Some(("document", m)),
+        _ => None,
+    });
 
-    if let Some(mime) = img_mime {
+    if let Some((ty, mime)) = media {
         if offset.is_some() || limit.is_some() {
-            bail!("offset or limit specified for image file");
+            bail!("offset or limit specified for binary file");
         }
 
-        Ok(vec![Content::Image {
-            source: ImageSource {
-                kind: "base64".to_string(),
-                media_type: mime.to_string(),
-                data: BASE64_STANDARD.encode(content),
-            }
+        let source = FileSource {
+            kind: "base64".to_string(),
+            media_type: mime.to_string(),
+            data: BASE64_STANDARD.encode(content),
+        };
+
+        Ok(vec![if ty == "image" {
+            Content::Image { source }
+        } else {
+            Content::Document { source }
         }])
     } else {
         let offset = offset.unwrap_or(1) as usize;

@@ -84,7 +84,8 @@ pub enum Content {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
-    Image { source: ImageSource, },
+    Image { source: FileSource },
+    Document { source: FileSource },
     Thinking {
         thinking: String,
         #[serde(default)]
@@ -99,13 +100,20 @@ pub enum Content {
     },
     ToolResult {
         tool_use_id: String,
-        content: Vec<Content>,
+        content: StrContent,
         is_error: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cache_control: Option<CacheControl>,
     },
     #[serde(other)]
     Unknown,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum StrContent {
+    Str(String),
+    Content(Vec<Content>),
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -116,7 +124,7 @@ pub struct CacheControl {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ImageSource {
+pub struct FileSource {
     #[serde(rename = "type")]
     pub kind: String,
     pub media_type: String,
