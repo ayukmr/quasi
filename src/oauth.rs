@@ -61,9 +61,13 @@ impl Credentials {
     }
 
     pub fn ensure(&mut self, renderer: Arc<Mutex<Renderer>>) -> Result<()> {
-        if self.expires < SystemTime::now() {
-            self.refresh(renderer)?;
-            let _ = self.save();
+        if self.expires <= SystemTime::now() {
+            if let Ok(loaded) = Self::load() && loaded.expires > SystemTime::now() {
+                *self = loaded;
+            } else {
+                self.refresh(renderer)?;
+                let _ = self.save();
+            }
         }
 
         Ok(())
