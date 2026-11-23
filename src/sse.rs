@@ -241,8 +241,7 @@ pub enum StopReason {
     EndTurn,
     ToolUse,
     MaxTokens,
-    // custom
-    Interrupt,
+    Interrupt, // custom
     #[serde(other)]
     Unknown,
 }
@@ -327,8 +326,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                 rendered = 0;
                 json_buf.clear();
             }
-            Event::ContentBlockDelta { index: _index, delta } => {
-                // TODO in theory use index
+            Event::ContentBlockDelta { index: _index, delta } => { // TODO in theory use index
                 match delta {
                     ContentDelta::TextDelta { delta } => {
                         if let Some(Content::Text { text, .. }) = cur.as_mut() {
