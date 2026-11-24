@@ -328,37 +328,32 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
             }
             Event::ContentBlockDelta { index: _index, delta } => { // TODO in theory use index
                 match delta {
-                    ContentDelta::TextDelta { delta } => {
-                        if let Some(Content::Text { text, .. }) = cur.as_mut() {
-                            *text += &delta;
-                            let pending = &text[rendered..];
+                    ContentDelta::TextDelta { delta } if let Some(Content::Text { text, .. }) = cur.as_mut() => {
+                        *text += &delta;
+                        let pending = &text[rendered..];
 
-                            if !pending.trim().is_empty() {
-                                let full = render::format(text, "markdown");
-                                renderer.lock().unwrap().write_pretty(pending, &full);
-                                rendered = text.len();
-                            }
+                        if !pending.trim().is_empty() {
+                            let full = render::format(text, "markdown");
+                            renderer.lock().unwrap().write_pretty(pending, &full);
+                            rendered = text.len();
                         }
                     }
-                    ContentDelta::ThinkingDelta { delta } => {
-                        if let Some(Content::Thinking { thinking, .. }) = cur.as_mut() {
-                            *thinking += &delta;
-                            let pending = &thinking[rendered..];
+                    ContentDelta::ThinkingDelta { delta } if let Some(Content::Thinking { thinking, .. }) = cur.as_mut() => {
+                        *thinking += &delta;
+                        let pending = &thinking[rendered..];
 
-                            if !pending.trim().is_empty() {
-                                renderer.lock().unwrap().write_plain(pending);
-                                rendered = thinking.len();
-                            }
+                        if !pending.trim().is_empty() {
+                            renderer.lock().unwrap().write_plain(pending);
+                            rendered = thinking.len();
                         }
                     }
-                    ContentDelta::SignatureDelta { delta } => {
-                        if let Some(Content::Thinking { signature, .. }) = cur.as_mut() {
-                            *signature += &delta;
-                        }
+                    ContentDelta::SignatureDelta { delta } if let Some(Content::Thinking { signature, .. }) = cur.as_mut() => {
+                        *signature += &delta;
                     }
                     ContentDelta::InputJsonDelta { delta } => {
                         json_buf += &delta;
                     }
+                    _ => {}
                 }
             }
             Event::ContentBlockStop => {

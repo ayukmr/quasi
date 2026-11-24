@@ -5,7 +5,6 @@ use crate::sse::{self, Body, Content, Message, StrContent, OutputConfig, Role, S
 use crate::tools::{self, Tool};
 
 use std::fs;
-use std::fmt::Write;
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -86,29 +85,34 @@ impl Agent {
         let tools = tools::tools()?;
 
         let mut out = String::new();
-        for msg in &save.messages {
-            for cont in &msg.content {
+        for msg in save.messages.iter().rev() {
+            for cont in msg.content.iter().rev() {
                 match cont {
                     Content::Text { text, .. } => {
                         match msg.role {
                             Role::User => {
-                                writeln!(out, "\n\x1b[35m❱\x1b[0m {text}").unwrap();
+                                out.insert_str(0, &format!("\n\x1b[35m❱\x1b[0m {text}\n"));
                             }
                             Role::Assistant => {
-                                writeln!(out, "{}", render::format(text, "markdown")).unwrap();
+                                out.insert_str(0, &format!("{}\n", render::format(text, "markdown")));
                             }
                             _ => {}
                         }
                     }
                     Content::Thinking { thinking, .. } if !thinking.trim().is_empty() => {
-                        writeln!(out, "{}", render::dimmed(thinking.trim())).unwrap();
+                        out.insert_str(0, &format!("{}\n", render::dimmed(thinking.trim())));
                     }
                     Content::ToolUse { name, input, .. } => {
                         let tool = tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
-                        writeln!(out, "{}", render::tool(tool, input)).unwrap();
+                        out.insert_str(0, &format!("{}\n", render::tool(tool, input)));
                     }
                     _ => {}
                 }
+            }
+
+            if out.lines().count() > 100 {
+                out.insert_str(0, "\x1b[1m[cut off at 100 lines...]\x1b[0m\n");
+                break;
             }
         }
 
@@ -185,14 +189,29 @@ impl Agent {
                 })
                 .context("no message somehow")?;
 
-        sse::complete(
+        let raw = sse::complete(
             "haiku-5-5",
             SLUG_SYSTEM,
             &format!("<message>{msg}<message>"),
             32,
             &mut self.creds,
             self.renderer.clone(),
-        )
+        )?;
+
+        let mut slug = String::new();
+        let mut alph = false;
+
+        for c in raw.chars() {
+            if c.is_ascii_alphabetic() {
+                slug.push(c.to_ascii_lowercase());
+                alph = true;
+            } else if alph {
+                slug.push('-');
+                alph = false;
+            }
+        }
+
+        Ok(slug)
     }
 
     pub fn reload(&mut self) -> Result<()> {
