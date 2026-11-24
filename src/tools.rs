@@ -196,7 +196,7 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "bash_write",
-            "Execute a bash command with write access in the current working directory. Use only when a command must write: builds, tests, installs. Do not use to change files, use edit/write instead. Returns stdout and stderr.",
+            "Execute a bash command that needs write access in the current working directory. Use only when a command writes as a side effect: builds, tests, installs. Do not use to directly create or modify file contents, use write/edit instead. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
