@@ -72,8 +72,7 @@ impl Completer for Complete {
                     Pair { display: s.clone(), replacement: s }
                 })
                 .collect();
-
-            files.sort_by(|a, b| a.display.len().cmp(&b.display.len()));
+            files.sort_by_key(|p| p.display.len());
 
             return Ok((start + 1, files));
         }
@@ -93,8 +92,7 @@ impl Completer for Complete {
             .filter(|c| c.starts_with(cur))
             .map(|c| Pair { display: c.to_string(), replacement: c.to_string() })
             .collect();
-
-        matches.sort_by(|a, b| a.display.len().cmp(&b.display.len()));
+        matches.sort_by_key(|p| p.display.len());
 
         Ok((start, matches))
     }
