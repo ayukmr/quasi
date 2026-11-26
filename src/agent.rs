@@ -281,6 +281,8 @@ impl Agent {
 
                     let (content, is_error) =
                         if !tool.dangerous || self.yolo || self.renderer.lock().unwrap().confirm() {
+                            self.renderer.lock().unwrap().set_status(Some(&format!("calling {}", tool.name)));
+
                             let resp = (tool.call)(input.clone());
                             let is_err = resp.is_err();
 

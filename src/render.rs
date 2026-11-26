@@ -53,7 +53,7 @@ pub fn tool(tool: &Tool, input: &HashMap<String, Value>) -> String {
 
     disp.unwrap_or_else(|_| {
         format!(
-            "\x1b[1m+ {}({})\x1b[0m",
+            "\x1b[1m{}({})\x1b[0m",
             tool.name,
             input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", "),
         )

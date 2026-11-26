@@ -182,7 +182,7 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "bash",
-            "Execute a read-only bash command in the current working directory. Read-only sandbox, any file write fails with 'Operation not permitted'. Returns stdout and stderr.",
+            "Execute a read-only bash command. Read-only sandbox, any file write fails with 'Operation not permitted'. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
@@ -196,7 +196,7 @@ pub fn tools() -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "bash_write",
-            "Execute a bash command that needs write access in the current working directory. Use only when a command writes as a side effect: builds, tests, installs. Do not use to directly create or modify file contents, use write/edit instead. Returns stdout and stderr.",
+            "Execute a bash command that needs write access. Use only for commands with side effect: builds, tests, installs. Never use it to create or change file contents (no heredocs, no >, no >>, no tee, no sed -i), use edit/write instead. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
@@ -264,7 +264,7 @@ fn render_read(args: HashMap<String, Value>) -> Result<String> {
     let limit = args.get("limit").map(|o| o.as_u64().context("limit: wrong type")).transpose()?;
 
     Ok(format!(
-        "\x1b[1mreading {}\x1b[0m{}{}",
+        "\x1b[1mreading\x1b[0m \x1b[36m{}\x1b[0m{}{}",
         path.to_string_lossy(),
         offset.map_or(String::new(), |o| format!(" @ {o}")),
         limit.map_or(String::new(), |l| format!(" (limit: {l})")),
@@ -293,7 +293,7 @@ fn render_write(args: HashMap<String, Value>) -> Result<String> {
         .print_with_writer(Some(&mut syn))
         .unwrap();
 
-    Ok(format!("\x1b[1mwriting to {}:\x1b[0m\n{}", path.to_string_lossy(), syn.trim()))
+    Ok(format!("\x1b[1mwriting\x1b[0m \x1b[36m{}\x1b[0m:\n{}", path.to_string_lossy(), syn.trim()))
 }
 
 fn edit(args: HashMap<String, Value>) -> Result<Vec<Content>> {
@@ -331,7 +331,7 @@ fn render_edit(args: HashMap<String, Value>) -> Result<String> {
     let diff_old = format_diff(prefix, suffix, old, "-", "31", "41");
     let diff_new = format_diff(prefix, suffix, new, "+", "32", "42");
 
-    Ok(format!("\x1b[1mediting {}:\x1b[0m\n{diff_old}\n{diff_new}", path.to_string_lossy()))
+    Ok(format!("\x1b[1mediting\x1b[0m \x1b[36m{}\x1b[0m:\n{diff_old}\n{diff_new}", path.to_string_lossy()))
 }
 
 fn format_diff(prefix: &str, suffix: &str, mid: &str, marker: &str, fg: &str, hl: &str) -> String {

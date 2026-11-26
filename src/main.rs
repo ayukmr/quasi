@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use anyhow::Result;
-use rustyline::{Context, Editor, Helper, Highlighter, Hinter, Validator};
+use rustyline::{Config, Context, EditMode, Editor, Helper, Highlighter, Hinter, Validator};
 use rustyline::completion::{Completer, Pair};
 
 const MODELS: &[&str] = &["fable-5-1", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
@@ -113,7 +113,8 @@ fn main() -> Result<()> {
         }
     });
 
-    let mut rl = Editor::new()?;
+    let config = Config::builder().edit_mode(EditMode::Vi).build();
+    let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(Complete));
 
     let mut agent = if let Some(name) = env::args().nth(1) {
@@ -130,10 +131,16 @@ fn main() -> Result<()> {
 
         utils::flush_input();
         utils::set_echo(true);
+        let status = format!(
+            "{}{}{}",
+            if agent::INTERRUPTED.load(Ordering::SeqCst) { "\x1b[31m\x1b[0m" } else { "" },
+            if agent::INTERRUPTED.load(Ordering::SeqCst) && incognito { " " } else { "" },
+            if incognito { "" } else { "" },
+        );
+
         let readline = rl.readline(&format!(
-            "{}{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (cached {}) \x1b[34m↓\x1b[0m{}\n\x1b[35m❱\x1b[0m ",
-            if agent::INTERRUPTED.load(Ordering::SeqCst) { "\x1b[31m^C\x1b[0m · " } else { "" },
-            if incognito { "◌ · " } else { "" },
+            "{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (\x1b[31m↟\x1b[0m{}) \x1b[34m↓\x1b[0m{}\n\x1b[35m❱\x1b[0m ",
+            if status.is_empty() { "".to_string() } else { format!("{status} · ") },
             agent.save.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
             agent.thinking,
@@ -145,7 +152,7 @@ fn main() -> Result<()> {
 
         match readline {
             Ok(prompt) => {
-                if prompt.is_empty() {
+                if prompt.trim().is_empty() {
                     continue;
                 }
 
