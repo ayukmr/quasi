@@ -56,9 +56,9 @@ pub fn tool(tool: &Tool, input: &HashMap<String, Value>) -> String {
         args.sort_unstable_by_key(|(k, _)| *k);
 
         format!(
-            "\x1b[1m{}({})\x1b[0m",
+            "\x1b[1m{}\x1b[0m({})",
             tool.name,
-            input.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join(", "),
+            input.iter().map(|(k, v)| format!("{k}: \x1b[36m{v}\x1b[0m")).collect::<Vec<_>>().join(", "),
         )
     })
 }
