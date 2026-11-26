@@ -58,7 +58,7 @@ pub fn tool(name: &str, tool: Option<&Tool>, input: &HashMap<String, Value>) -> 
         format!(
             "\x1b[1m{}\x1b[0m({})",
             name,
-            input.iter().map(|(k, v)| format!("{k}: \x1b[36m{v}\x1b[0m")).collect::<Vec<_>>().join(", "),
+            args.iter().map(|(k, v)| format!("{k}: \x1b[36m{v}\x1b[0m")).collect::<Vec<_>>().join(", "),
         )
     })
 }
