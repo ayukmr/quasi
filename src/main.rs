@@ -131,12 +131,18 @@ fn main() -> Result<()> {
 
         utils::flush_input();
         utils::set_echo(true);
-        let status = format!(
-            "{}{}{}",
-            if agent::INTERRUPTED.load(Ordering::SeqCst) { "\x1b[31m\x1b[0m" } else { "" },
-            if agent::INTERRUPTED.load(Ordering::SeqCst) && incognito { " " } else { "" },
-            if incognito { "" } else { "" },
-        );
+
+        let mut icons = Vec::new();
+        if agent::INTERRUPTED.load(Ordering::SeqCst) {
+            icons.push("\x1b[31m\x1b[0m")
+        }
+        if incognito {
+            icons.push("");
+        }
+        if agent.yolo {
+            icons.push("\x1b[33m\x1b[0m");
+        }
+        let status = icons.join(" ");
 
         let readline = rl.readline(&format!(
             "{}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (\x1b[31m↟\x1b[0m{}) \x1b[34m↓\x1b[0m{}\n\x1b[35m⟩\x1b[0m ",
