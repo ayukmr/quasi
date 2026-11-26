@@ -48,16 +48,16 @@ fn rows(s: &str) -> usize {
     s.chars().count().max(1).div_ceil(cols)
 }
 
-pub fn tool(tool: &Tool, input: &HashMap<String, Value>) -> String {
-    let disp = (tool.render)(input.clone());
+pub fn tool(name: &str, tool: Option<&Tool>, input: &HashMap<String, Value>) -> String {
+    let disp = tool.and_then(|t| (t.render)(input.clone()).ok());
 
-    disp.unwrap_or_else(|_| {
+    disp.unwrap_or_else(|| {
         let mut args: Vec<(&String, &Value)> = input.iter().collect();
         args.sort_unstable_by_key(|(k, _)| *k);
 
         format!(
             "\x1b[1m{}\x1b[0m({})",
-            tool.name,
+            name,
             input.iter().map(|(k, v)| format!("{k}: \x1b[36m{v}\x1b[0m")).collect::<Vec<_>>().join(", "),
         )
     })

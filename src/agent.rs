@@ -61,8 +61,8 @@ impl Agent {
             model: "sonnet-5-5".to_string(),
             thinking: "medium".to_string(),
             renderer: renderer.clone(),
-            creds: Credentials::get(renderer)?,
-            tools: tools::tools()?,
+            creds: Credentials::get(renderer.clone())?,
+            tools: tools::tools(renderer)?,
             system: vec![
                 Content::Text { text: "You are Claude Code, Anthropic's official CLI for Claude.".to_string(), cache_control: None },
                 Content::Text { text: SYSTEM.to_string(), cache_control: None },
@@ -79,7 +79,7 @@ impl Agent {
         let json = fs::read_to_string(file)?;
         let save: AgentSave = serde_json::from_str(&json)?;
 
-        let tools = tools::tools()?;
+        let tools = tools::tools(renderer.clone())?;
 
         let mut out = String::new();
         for msg in save.messages.iter().rev() {
@@ -100,8 +100,8 @@ impl Agent {
                         out.insert_str(0, &format!("{}\n", render::dimmed(thinking.trim())));
                     }
                     Content::ToolUse { name, input, .. } => {
-                        let tool = tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
-                        out.insert_str(0, &format!("{}\n", render::tool(tool, input)));
+                        let tool = tools.iter().find(|t| t.name == *name);
+                        out.insert_str(0, &format!("{}\n", render::tool(name, tool, input)));
                     }
                     _ => {}
                 }
@@ -184,12 +184,12 @@ impl Agent {
                         _ => None,
                     }
                 })
-                .context("no message somehow")?;
+                .context("no message for naming")?;
 
         let raw = sse::complete(
             "haiku-5-5",
             SLUG_SYSTEM,
-            &format!("<message>{msg}<message>"),
+            &format!("<message>{msg}</message>"),
             32,
             &mut self.creds,
             self.renderer.clone(),
@@ -212,7 +212,7 @@ impl Agent {
     }
 
     pub fn reload(&mut self) -> Result<()> {
-        self.tools = tools::tools()?;
+        self.tools = tools::tools(self.renderer.clone())?;
         Ok(())
     }
 
@@ -277,7 +277,7 @@ impl Agent {
                 if let Content::ToolUse { id, name, input } = c {
                     let tool = self.tools.iter().find(|t| t.name == *name).context("invalid tool call")?;
 
-                    self.renderer.lock().unwrap().write_line(&render::tool(tool, input));
+                    self.renderer.lock().unwrap().write_line(&render::tool(name, Some(tool), input));
 
                     let (content, is_error) =
                         if !tool.dangerous || self.yolo || self.renderer.lock().unwrap().confirm() {

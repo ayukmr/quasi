@@ -1,8 +1,9 @@
 use crate::sse::{Content, FileSource, StrContent};
-use crate::{render, utils};
+use crate::{Renderer, render, utils};
 
-use std::{collections::HashMap, path::PathBuf};
 use std::fs;
+use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, path::PathBuf};
 use std::process::{Command, Output};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -64,7 +65,7 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
     anyhow!("{e}")
 }
 
-pub fn tools() -> Result<Vec<Tool>> {
+pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
     let mut tools = Vec::new();
 
     if let Ok(entries) = fs::read_dir(utils::tools_dir()) {
@@ -73,62 +74,71 @@ pub fn tools() -> Result<Vec<Tool>> {
             if path.extension().is_none_or(|e| e != "lua") {
                 continue;
             }
+
             let path_s = path.to_str().unwrap();
 
-            let lua = Lua::new();
-            lua.load(path.as_path()).exec().map_err(lua_err)?;
+            let res = (|| -> Result<()> {
+                let lua = Lua::new();
+                lua.load(path.as_path()).exec().map_err(lua_err)?;
 
-            let globals = lua.globals();
+                let globals = lua.globals();
 
-            let name: String = globals.get("name").map_err(lua_err)?;
-            let description: String = format!(
-                "{} (Lua tool from {path_s})",
-                globals.get::<String>("description").map_err(lua_err)?,
-            );
+                let name: String = globals.get("name").map_err(lua_err)?;
+                let description: String = format!(
+                    "{} (Lua tool from {path_s})",
+                    globals.get::<String>("description").map_err(lua_err)?,
+                );
 
-            let params_t: Table = globals.get("params").map_err(lua_err)?;
-            let params = params_t
-                .sequence_values::<Table>()
-                .map(|r| {
-                    let r = r?;
-                    Ok((r.get(1)?, r.get(2)?, r.get(3)?))
-                })
-                .collect::<mlua::Result<Vec<(String, String, String)>>>().map_err(lua_err)?;
+                let params_t: Table = globals.get("params").map_err(lua_err)?;
+                let params = params_t
+                    .sequence_values::<Table>()
+                    .map(|r| {
+                        let r = r?;
+                        Ok((r.get(1)?, r.get(2)?, r.get(3)?))
+                    })
+                    .collect::<mlua::Result<Vec<(String, String, String)>>>().map_err(lua_err)?;
 
-            let required: Vec<String> = globals.get("required").map_err(lua_err)?;
-            let dangerous: bool = globals.get("dangerous").map_err(lua_err)?;
+                let required: Vec<String> = globals.get("required").map_err(lua_err)?;
+                let dangerous: bool = globals.get("dangerous").map_err(lua_err)?;
 
-            let call: Function = globals.get("call").map_err(lua_err)?;
-            let render: Function = globals.get("render").map_err(lua_err)?;
+                let call: Function = globals.get("call").map_err(lua_err)?;
+                let render: Function = globals.get("render").map_err(lua_err)?;
 
-            let lua_c = lua.clone();
-            let call_box = Box::new(move |args| {
-                let arg = lua_c.to_value(&args).map_err(lua_err)?;
+                let lua_c = lua.clone();
+                let call_box = Box::new(move |args| {
+                    let arg = lua_c.to_value(&args).map_err(lua_err)?;
 
-                let out = call.call(arg).map_err(lua_err)?;
-                match lua_c.from_value(out).map_err(lua_err)? {
-                    StrContent::Str(s) => Ok(utils::text(s)),
-                    StrContent::Content(c) => Ok(c),
-                }
-            });
+                    let out = call.call(arg).map_err(lua_err)?;
+                    match lua_c.from_value(out).map_err(lua_err)? {
+                        StrContent::Str(s) => Ok(utils::text(s)),
+                        StrContent::Content(c) => Ok(c),
+                    }
+                });
 
-            let lua_r = lua.clone();
-            let render_box = Box::new(move |args| {
-                let arg = lua_r.to_value(&args).map_err(lua_err)?;
-                render.call(arg).map_err(lua_err)
-            });
+                let lua_r = lua.clone();
+                let render_box = Box::new(move |args| {
+                    let arg = lua_r.to_value(&args).map_err(lua_err)?;
+                    render.call(arg).map_err(lua_err)
+                });
 
-            tools.push(
-                Tool {
-                    name,
-                    description,
-                    params,
-                    required,
-                    dangerous,
-                    call: call_box,
-                    render: render_box,
-                }
-            );
+                tools.push(
+                    Tool {
+                        name,
+                        description,
+                        params,
+                        required,
+                        dangerous,
+                        call: call_box,
+                        render: render_box,
+                    }
+                );
+
+                Ok(())
+            })();
+
+            if let Err(e) = res {
+                renderer.lock().unwrap().write_error(&format!("error loading {path_s}: {e:#}"));
+            }
         }
     }
 
@@ -247,6 +257,9 @@ fn read(args: HashMap<String, Value>) -> Result<Vec<Content>> {
         let all: Vec<&str> = content.lines().collect();
         let total = all.len();
 
+        if total == 0 {
+            bail!("file is empty");
+        }
         if offset > total {
             bail!("offset {offset} is past total lines {total}");
         }
