@@ -20,7 +20,7 @@ General guidelines:
 - A token starting with @ refers to a file or directory path, in the form @<path>.
 
 Tool guidelines:
-- Use read to examine files before editing.
+- Always use read to view file contents.
 - Always create files with write, change existing files with edit.
 - Use bash for read-only inspection: ls, rg, fd, cat, git status.
 - Use bash_write only to run programs that have side effects: builds, tests, chmod, mv, mkdir.
