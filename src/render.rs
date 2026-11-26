@@ -52,6 +52,9 @@ pub fn tool(tool: &Tool, input: &HashMap<String, Value>) -> String {
     let disp = (tool.render)(input.clone());
 
     disp.unwrap_or_else(|_| {
+        let mut args: Vec<(&String, &Value)> = input.iter().collect();
+        args.sort_unstable_by_key(|(k, _)| *k);
+
         format!(
             "\x1b[1m{}({})\x1b[0m",
             tool.name,
