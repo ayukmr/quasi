@@ -49,7 +49,9 @@ pub fn bat(text: &str, extra: &[&str]) -> String {
 }
 
 pub fn tokens(n: u32) -> String {
-    if n >= 10000 {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f32 / 1_000_000.0)
+    } else if n >= 10_000 {
         format!("{}k", n / 1000)
     } else if n >= 100 {
         format!("{:.1}k", n as f32 / 1000.0)
