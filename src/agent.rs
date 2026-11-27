@@ -43,6 +43,7 @@ pub struct Agent {
     system: Vec<Content>,
     pub messages: Vec<Message>,
     pub usage: Usage,
+    pub incognito: bool,
     pub yolo: bool,
     pub save: Option<String>,
 }
@@ -71,6 +72,7 @@ impl Agent {
             messages: Vec::new(),
             usage: Usage::default(),
             yolo: false,
+            incognito: false,
             save: None,
         })
     }
@@ -125,6 +127,7 @@ impl Agent {
             system: save.system,
             messages: save.messages,
             usage: save.usage,
+            incognito: false,
             yolo: false,
             save: Some(name.to_string()),
         })
