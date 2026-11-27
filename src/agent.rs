@@ -89,7 +89,7 @@ impl Agent {
                     Content::Text { text, .. } => {
                         match msg.role {
                             Role::User => {
-                                out.insert_str(0, &format!("\n\x1b[35m❱\x1b[0m {text}\n"));
+                                out.insert_str(0, &format!("\n\x1b[35m⟩\x1b[0m {text}\n"));
                             }
                             Role::Assistant => {
                                 out.insert_str(0, &format!("{}\n", render::glow(text)));
