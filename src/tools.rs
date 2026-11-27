@@ -67,80 +67,6 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
     let mut tools = Vec::new();
 
-    if let Ok(entries) = fs::read_dir(utils::tools_dir()) {
-        for entry in entries {
-            let path = entry?.path();
-            if path.extension().is_none_or(|e| e != "lua") {
-                continue;
-            }
-
-            let path_s = path.to_str().unwrap();
-
-            let res = (|| -> Result<()> {
-                let lua = Lua::new();
-                lua.load(path.as_path()).exec().map_err(lua_err)?;
-
-                let globals = lua.globals();
-
-                let name: String = globals.get("name").map_err(lua_err)?;
-                let description: String = format!(
-                    "{} (Lua tool from {path_s})",
-                    globals.get::<String>("description").map_err(lua_err)?,
-                );
-
-                let params_t: Table = globals.get("params").map_err(lua_err)?;
-                let params = params_t
-                    .sequence_values::<Table>()
-                    .map(|r| {
-                        let r = r?;
-                        Ok((r.get(1)?, r.get(2)?, r.get(3)?))
-                    })
-                    .collect::<mlua::Result<Vec<(String, String, String)>>>().map_err(lua_err)?;
-
-                let required: Vec<String> = globals.get("required").map_err(lua_err)?;
-                let dangerous: bool = globals.get("dangerous").map_err(lua_err)?;
-
-                let call: Function = globals.get("call").map_err(lua_err)?;
-                let render: Function = globals.get("render").map_err(lua_err)?;
-
-                let lua_c = lua.clone();
-                let call_box = Box::new(move |args| {
-                    let arg = lua_c.to_value(&args).map_err(lua_err)?;
-
-                    let out = call.call(arg).map_err(lua_err)?;
-                    match lua_c.from_value(out).map_err(lua_err)? {
-                        StrContent::Str(s) => Ok(utils::text(s)),
-                        StrContent::Content(c) => Ok(c),
-                    }
-                });
-
-                let lua_r = lua.clone();
-                let render_box = Box::new(move |args| {
-                    let arg = lua_r.to_value(&args).map_err(lua_err)?;
-                    render.call(arg).map_err(lua_err)
-                });
-
-                tools.push(
-                    Tool {
-                        name,
-                        description,
-                        params,
-                        required,
-                        dangerous,
-                        call: call_box,
-                        render: render_box,
-                    }
-                );
-
-                Ok(())
-            })();
-
-            if let Err(e) = res {
-                renderer.lock().unwrap().write_error(&format!("error loading {path_s}: {e:#}"));
-            }
-        }
-    }
-
     tools.push(
         Tool::create(
             "read",
@@ -215,6 +141,84 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             Box::new(render_bash_write),
         )
     );
+
+    if let Ok(entries) = fs::read_dir(utils::tools_dir()) {
+        for entry in entries {
+            let path = entry?.path();
+            if path.extension().is_none_or(|e| e != "lua") {
+                continue;
+            }
+
+            let path_s = path.to_str().unwrap();
+
+            let res = (|| -> Result<()> {
+                let lua = Lua::new();
+                lua.load(path.as_path()).exec().map_err(lua_err)?;
+
+                let globals = lua.globals();
+
+                let name: String = globals.get("name").map_err(lua_err)?;
+                if tools.iter().any(|t| t.name == name) {
+                    bail!("\"{name}\" tool already exists");
+                }
+
+                let description: String = format!(
+                    "{} (Lua tool from {path_s})",
+                    globals.get::<String>("description").map_err(lua_err)?,
+                );
+
+                let params_t: Table = globals.get("params").map_err(lua_err)?;
+                let params = params_t
+                    .sequence_values::<Table>()
+                    .map(|r| {
+                        let r = r?;
+                        Ok((r.get(1)?, r.get(2)?, r.get(3)?))
+                    })
+                    .collect::<mlua::Result<Vec<(String, String, String)>>>().map_err(lua_err)?;
+
+                let required: Vec<String> = globals.get("required").map_err(lua_err)?;
+                let dangerous: bool = globals.get("dangerous").map_err(lua_err)?;
+
+                let call: Function = globals.get("call").map_err(lua_err)?;
+                let render: Function = globals.get("render").map_err(lua_err)?;
+
+                let lua_c = lua.clone();
+                let call_box = Box::new(move |args| {
+                    let arg = lua_c.to_value(&args).map_err(lua_err)?;
+
+                    let out = call.call(arg).map_err(lua_err)?;
+                    match lua_c.from_value(out).map_err(lua_err)? {
+                        StrContent::Str(s) => Ok(utils::text(s)),
+                        StrContent::Content(c) => Ok(c),
+                    }
+                });
+
+                let lua_r = lua.clone();
+                let render_box = Box::new(move |args| {
+                    let arg = lua_r.to_value(&args).map_err(lua_err)?;
+                    render.call(arg).map_err(lua_err)
+                });
+
+                tools.push(
+                    Tool {
+                        name,
+                        description,
+                        params,
+                        required,
+                        dangerous,
+                        call: call_box,
+                        render: render_box,
+                    }
+                );
+
+                Ok(())
+            })();
+
+            if let Err(e) = res {
+                renderer.lock().unwrap().write_error(&format!("error loading {path_s}: {e:#}"));
+            }
+        }
+    }
 
     Ok(tools)
 }
