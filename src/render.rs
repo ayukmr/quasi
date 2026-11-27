@@ -48,6 +48,16 @@ pub fn bat(text: &str, extra: &[&str]) -> String {
     String::from_utf8_lossy(&output.stdout).to_string()
 }
 
+pub fn tokens(n: u32) -> String {
+    if n >= 10000 {
+        format!("{}k", n / 1000)
+    } else if n >= 100 {
+        format!("{:.1}k", n as f32 / 1000.0)
+    } else {
+        n.to_string()
+    }
+}
+
 pub fn dimmed(s: &str) -> String {
     s.split('\n')
         .map(|l| format!("\x1b[2m{l}\x1b[0m"))

@@ -1,5 +1,4 @@
-use quasi::{agent, utils, Agent, Renderer};
-use rustyline::error::ReadlineError;
+use quasi::{Agent, Renderer, agent, render, utils};
 
 use std::{env, fs, thread};
 use std::path::{Path, PathBuf};
@@ -9,6 +8,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use rustyline::{Config, Context, EditMode, Editor, Helper, Highlighter, Hinter, Validator};
+use rustyline::error::ReadlineError;
 use rustyline::completion::{Completer, Pair};
 
 const MODELS: &[&str] = &["fable-5-1", "opus-5-5", "sonnet-5-5", "haiku-5-5"];
@@ -150,9 +150,9 @@ fn main() -> Result<()> {
             agent.save.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
             agent.thinking,
-            agent.usage.input_tokens,
-            agent.usage.cache_creation_input_tokens,
-            agent.usage.output_tokens,
+            render::tokens(agent.usage.input_tokens),
+            render::tokens(agent.usage.cache_creation_input_tokens),
+            render::tokens(agent.usage.output_tokens),
         ));
         utils::set_echo(false);
 
