@@ -65,9 +65,7 @@ fn lua_err(e: mlua::Error) -> anyhow::Error {
 }
 
 pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
-    let mut tools = Vec::new();
-
-    tools.push(
+    let mut tools = vec![
         Tool::create(
             "read",
             "Read the contents of a text/image/PDF file. For text files, defaults to first 2000 lines. For image/PDF files, reads the entire file. Use offset/limit for large files.",
@@ -80,10 +78,7 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             false,
             Box::new(read),
             Box::new(render_read),
-        )
-    );
-
-    tools.push(
+        ),
         Tool::create(
             "write",
             "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
@@ -95,10 +90,7 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             true,
             Box::new(write),
             Box::new(render_write),
-        )
-    );
-
-    tools.push(
+        ),
         Tool::create(
             "edit",
             "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
@@ -111,10 +103,7 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             true,
             Box::new(edit),
             Box::new(render_edit),
-        )
-    );
-
-    tools.push(
+        ),
         Tool::create(
             "bash",
             "Execute a read-only bash command. Read-only sandbox, any file write fails with 'Operation not permitted'. Returns stdout and stderr.",
@@ -125,10 +114,7 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             false,
             Box::new(bash),
             Box::new(render_bash),
-        )
-    );
-
-    tools.push(
+        ),
         Tool::create(
             "bash_write",
             "Execute a bash command that needs write access. Use only for commands with side effects: builds, tests, installs, chmod, mv, mkdir. Never use this to create or change file contents in any way, use edit/write instead. Returns stdout and stderr.",
@@ -139,8 +125,8 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             true,
             Box::new(bash_write),
             Box::new(render_bash_write),
-        )
-    );
+        ),
+    ];
 
     if let Ok(entries) = fs::read_dir(utils::tools_dir()) {
         for entry in entries {
