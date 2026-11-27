@@ -5,12 +5,20 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::os::unix::process::CommandExt;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use serde_json::Value;
 
+pub static HAS_GLOW: AtomicBool = AtomicBool::new(false);
+pub static HAS_BAT: AtomicBool = AtomicBool::new(false);
+
 pub fn glow(text: &str) -> String {
+    if !HAS_GLOW.load(Ordering::SeqCst) {
+        return text.to_string();
+    }
+
     let (reader, mut writer) = io::pipe().unwrap();
 
     writer.write_all(text.as_bytes()).unwrap();
@@ -32,6 +40,10 @@ pub fn glow(text: &str) -> String {
 }
 
 pub fn bat(text: &str, extra: &[&str]) -> String {
+    if !HAS_BAT.load(Ordering::SeqCst) {
+        return text.to_string();
+    }
+
     let (reader, mut writer) = io::pipe().unwrap();
 
     writer.write_all(text.as_bytes()).unwrap();
@@ -45,7 +57,7 @@ pub fn bat(text: &str, extra: &[&str]) -> String {
         .output()
         .unwrap();
 
-    String::from_utf8_lossy(&output.stdout).to_string()
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }
 
 pub fn tokens(n: u32) -> String {

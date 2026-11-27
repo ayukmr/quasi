@@ -1,6 +1,8 @@
 use quasi::{Agent, Renderer, agent, prompt, render, utils};
 
 use std::{env, thread};
+use std::os::unix::process::CommandExt;
+use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -10,11 +12,28 @@ use rustyline::error::ReadlineError;
 
 const TICK: Duration = Duration::from_millis(30);
 
+fn check(cmd: &str) -> bool {
+    Command::new(cmd)
+        .process_group(0)
+        .args(["--version"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_or(false, |s| s.success())
+}
+
 fn main() -> Result<()> {
     let renderer = Arc::new(Mutex::new(Renderer::new()));
     let renderer2 = renderer.clone();
 
     ctrlc::set_handler(move || agent::INTERRUPTED.store(true, Ordering::SeqCst))?;
+
+    if check("glow") {
+        render::HAS_GLOW.store(true, Ordering::SeqCst);
+    }
+    if check("bat") {
+        render::HAS_BAT.store(true, Ordering::SeqCst);
+    }
 
     thread::spawn(move || {
         loop {
