@@ -205,7 +205,7 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
     tools.push(
         Tool::create(
             "bash_write",
-            "Execute a bash command that needs write access. Use only for commands with side effect: builds, tests, installs. Never use it to create or change file contents (no heredocs, no >, no >>, no tee, no sed -i), use edit/write instead. Returns stdout and stderr.",
+            "Execute a bash command that needs write access. Use only for commands with side effects: builds, tests, installs, chmod, mv, mkdir. Never use this to create or change file contents in any way, use edit/write instead. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
