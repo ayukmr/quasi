@@ -3,37 +3,49 @@ use crate::tools::Tool;
 
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::os::unix::process::CommandExt;
+use std::process::Command;
 
-use bat::PrettyPrinter;
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use serde_json::Value;
 
-pub struct Renderer {
-    t: usize,
-    status: Option<String>,
-    fresh: bool,
-    last: String,
-    queue: String,
-}
+pub fn glow(text: &str) -> String {
+    let (reader, mut writer) = io::pipe().unwrap();
 
-pub fn format(text: &str, lang: &str) -> String {
-    let mut syn = String::new();
-    PrettyPrinter::new()
-        .input_from_bytes(text.as_bytes())
-        .language(lang)
-        .theme("base16")
-        .colored_output(true)
-        .print_with_writer(Some(&mut syn))
+    writer.write_all(text.as_bytes()).unwrap();
+    drop(writer);
+
+    let output = Command::new("glow")
+        .process_group(0)
+        .args(["-s", "auto", "-w", &cols().to_string(), "-"])
+        .stdin(reader)
+        .output()
         .unwrap();
 
-    syn
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(|l| l.strip_prefix("  ").unwrap_or(l)).collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
 }
 
-fn cols() -> usize {
-    terminal_size::terminal_size()
-        .map(|(w, _)| w.0 as usize)
-        .unwrap_or(80)
+pub fn bat(text: &str, extra: &[&str]) -> String {
+    let (reader, mut writer) = io::pipe().unwrap();
+
+    writer.write_all(text.as_bytes()).unwrap();
+    drop(writer);
+
+    let output = Command::new("bat")
+        .process_group(0)
+        .args(["-p", "--theme", "base16", "--color", "always", "-"])
+        .args(extra)
+        .stdin(reader)
+        .output()
+        .unwrap();
+
+    String::from_utf8_lossy(&output.stdout).to_string()
 }
 
 pub fn dimmed(s: &str) -> String {
@@ -43,9 +55,15 @@ pub fn dimmed(s: &str) -> String {
         .join("\n")
 }
 
+fn cols() -> usize {
+    terminal_size::terminal_size()
+        .map(|(w, _)| w.0 as usize)
+        .unwrap_or(80)
+}
+
 fn rows(s: &str) -> usize {
     let cols = cols();
-    s.chars().count().max(1).div_ceil(cols)
+    s.split("\n").map(|l| ansi_width::ansi_width(l).max(1).div_ceil(cols)).sum()
 }
 
 pub fn tool(name: &str, tool: Option<&Tool>, input: &HashMap<String, Value>) -> String {
@@ -63,6 +81,15 @@ pub fn tool(name: &str, tool: Option<&Tool>, input: &HashMap<String, Value>) -> 
     })
 }
 
+pub struct Renderer {
+    t: usize,
+    status: Option<String>,
+    fresh: bool,
+    last: String,
+    old: String,
+    queue: String,
+}
+
 impl Renderer {
     pub fn new() -> Self {
         Self {
@@ -71,6 +98,7 @@ impl Renderer {
             fresh: false,
             last: "".to_string(),
             queue: "".to_string(),
+            old: "".to_string(),
         }
     }
 
@@ -104,24 +132,27 @@ impl Renderer {
         }
     }
 
-    pub fn write_pretty(&mut self, delta: &str, full: &str) {
-        let up = rows(&self.last);
-        self.last += delta;
+    pub fn write_pretty(&mut self, full: &str) {
+        let start: usize =
+            self.old.chars()
+                .zip(full.chars())
+                .take_while(|(o, n)| o == n)
+                .map(|(c, _)| c.len_utf8())
+                .sum();
 
-        let nls = self.last.matches('\n').count();
-        let start = full.rmatch_indices('\n').nth(nls).map(|(i, _)| i + 1).unwrap_or(0);
-        let tail = &full[start..];
+        let line_start = full[..start].rfind("\n").map_or(0, |n| n + 1);
+        let tail = &full[line_start..];
 
-        if self.status.is_some() && !self.fresh {
+        let up = rows(&self.old[line_start..]);
+
+        if !self.fresh {
             self.queue += &format!("\x1b[{up}A");
         }
+        self.queue += "\r\x1b[J";
         self.fresh = false;
 
-        self.queue += &format!("\r\x1b[J{tail}\n");
-
-        if let Some((_, rest)) = self.last.rsplit_once('\n') {
-            self.last = rest.to_string();
-        }
+        self.queue += &format!("{tail}\n");
+        self.old = full.to_string();
     }
 
     pub fn write_line(&mut self, s: &str) {
@@ -144,22 +175,22 @@ impl Renderer {
     ];
 
     pub fn flush(&mut self) {
-        print!("{}", self.queue);
+        print!("\x1b[?2026h{}\x1b[?2026l", self.queue);
+
         self.queue.clear();
         io::stdout().flush().ok();
     }
 
     pub fn tick(&mut self) {
-        self.flush();
-
         let Some(status) = &self.status else {
+            self.flush();
             return;
         };
 
         self.t = (self.t + 1) % (Self::SPIN_FRAMES.len() * 2);
+        self.queue += &format!("\r\x1b[2K\x1b[35m{}\x1b[0m {status}...", Self::SPIN_FRAMES[self.t / 2]);
 
-        print!("\r\x1b[2K\x1b[35m{}\x1b[0m {status}...", Self::SPIN_FRAMES[self.t / 2]);
-        io::stdout().flush().ok();
+        self.flush();
     }
 
     pub fn confirm(&mut self) -> bool {

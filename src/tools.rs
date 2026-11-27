@@ -9,7 +9,6 @@ use std::process::{Command, Output};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use bat::{Input, PrettyPrinter};
 use infer::MatcherType;
 use mlua::{Function, Lua, LuaSerdeExt, Table};
 use serde_json::{Value, json};
@@ -298,15 +297,9 @@ fn render_write(args: HashMap<String, Value>) -> Result<String> {
     let path = &utils::expand_tilde(args.get("path").context("path: omitted")?.as_str().context("path: wrong type")?);
     let content = args.get("content").context("content: omitted")?.as_str().context("content: wrong type")?;
 
-    let mut syn = String::new();
-    PrettyPrinter::new()
-        .input(Input::from_bytes(content.as_bytes()).name(path))
-        .theme("base16")
-        .colored_output(true)
-        .print_with_writer(Some(&mut syn))
-        .unwrap();
+    let syn = render::bat(content, &["-n", "--file-name", &path.to_string_lossy()]);
 
-    Ok(format!("\x1b[1mwriting\x1b[0m \x1b[36m{}\x1b[0m:\n{}", path.to_string_lossy(), syn.trim()))
+    Ok(format!("\x1b[1mwriting\x1b[0m \x1b[36m{}\x1b[0m:\n{}", path.to_string_lossy(), syn))
 }
 
 fn edit(args: HashMap<String, Value>) -> Result<Vec<Content>> {
@@ -408,7 +401,7 @@ fn bash(args: HashMap<String, Value>) -> Result<Vec<Content>> {
 fn render_bash(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
-    Ok(format!("\x1b[1m$\x1b[0m {}", render::format(command, "bash")))
+    Ok(format!("\x1b[1m$\x1b[0m {}", render::bat(command, &["-l", "bash"])))
 }
 
 fn bash_write(args: HashMap<String, Value>) -> Result<Vec<Content>> {
@@ -424,5 +417,5 @@ fn bash_write(args: HashMap<String, Value>) -> Result<Vec<Content>> {
 fn render_bash_write(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
-    Ok(format!("\x1b[1;31m$\x1b[0m {}", render::format(command, "bash")))
+    Ok(format!("\x1b[1;31m$\x1b[0m {}", render::bat(command, &["-l", "bash"])))
 }

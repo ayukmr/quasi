@@ -91,7 +91,7 @@ impl Agent {
                                 out.insert_str(0, &format!("\n\x1b[35m❱\x1b[0m {text}\n"));
                             }
                             Role::Assistant => {
-                                out.insert_str(0, &format!("{}\n", render::format(text, "markdown")));
+                                out.insert_str(0, &format!("{}\n", render::glow(text)));
                             }
                             _ => {}
                         }

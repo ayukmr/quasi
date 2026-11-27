@@ -333,8 +333,8 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                         let pending = &text[rendered..];
 
                         if !pending.trim().is_empty() {
-                            let full = render::format(text, "markdown");
-                            renderer.lock().unwrap().write_pretty(pending, &full);
+                            let full = render::glow(text);
+                            renderer.lock().unwrap().write_pretty(&full);
                             rendered = text.len();
                         }
                     }
