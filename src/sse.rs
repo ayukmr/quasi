@@ -334,7 +334,7 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
 
                         if !pending.trim().is_empty() {
                             let full = render::glow(text);
-                            renderer.lock().unwrap().write_pretty(&full);
+                            renderer.lock().unwrap().write_full(&full);
                             rendered = text.len();
                         }
                     }
@@ -343,7 +343,8 @@ fn handle_resp(resp: ResponseLazy, renderer: Arc<Mutex<Renderer>>) -> Result<Res
                         let pending = &thinking[rendered..];
 
                         if !pending.trim().is_empty() {
-                            renderer.lock().unwrap().write_plain(pending);
+                            let full = render::dimmed(thinking);
+                            renderer.lock().unwrap().write_full(&full);
                             rendered = thinking.len();
                         }
                     }

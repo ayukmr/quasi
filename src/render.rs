@@ -110,7 +110,6 @@ pub struct Renderer {
     status: Option<String>,
     fresh: bool,
     last: String,
-    old: String,
     queue: String,
 }
 
@@ -120,9 +119,8 @@ impl Renderer {
             t: 0,
             status: None,
             fresh: false,
-            last: "".to_string(),
             queue: "".to_string(),
-            old: "".to_string(),
+            last: "".to_string(),
         }
     }
 
@@ -140,25 +138,9 @@ impl Renderer {
         self.status = status.map(|s| s.to_string());
     }
 
-    pub fn write_plain(&mut self, delta: &str) {
-        let up = rows(&self.last);
-        self.last += delta;
-
-        if self.status.is_some() && !self.fresh {
-            self.queue += &format!("\x1b[{up}A");
-        }
-        self.fresh = false;
-
-        self.queue += &format!("\r\x1b[J{}\n", dimmed(&self.last));
-
-        if let Some((_, rest)) = self.last.rsplit_once('\n') {
-            self.last = rest.to_string();
-        }
-    }
-
-    pub fn write_pretty(&mut self, full: &str) {
+    pub fn write_full(&mut self, full: &str) {
         let start: usize =
-            self.old.chars()
+            self.last.chars()
                 .zip(full.chars())
                 .take_while(|(o, n)| o == n)
                 .map(|(c, _)| c.len_utf8())
@@ -167,7 +149,7 @@ impl Renderer {
         let line_start = full[..start].rfind("\n").map_or(0, |n| n + 1);
         let tail = &full[line_start..];
 
-        let up = rows(&self.old[line_start..]);
+        let up = rows(&self.last[line_start..]);
 
         if !self.fresh {
             self.queue += &format!("\x1b[{up}A");
@@ -176,12 +158,11 @@ impl Renderer {
         self.fresh = false;
 
         self.queue += &format!("{tail}\n");
-        self.old = full.to_string();
+        self.last = full.to_string();
     }
 
     pub fn write_line(&mut self, s: &str) {
         self.queue += &format!("\r\x1b[2K{s}\n");
-        self.last.clear();
     }
 
     pub fn write_success(&mut self, s: &str) {
@@ -244,6 +225,5 @@ impl Renderer {
 
     pub fn finish(&mut self) {
         self.queue += "\n";
-        self.last.clear();
     }
 }
