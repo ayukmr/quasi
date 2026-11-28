@@ -391,7 +391,13 @@ fn bash(args: HashMap<String, Value>) -> Result<Vec<Content>> {
 fn render_bash(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
-    Ok(format!("\x1b[1m$\x1b[0m {}", render::bat(command, &["-l", "bash"])))
+    let fmt = render::bat(command, &["-l", "bash"])
+        .lines()
+        .map(|l| format!("\x1b[1m$\x1b[0m {l}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(fmt)
 }
 
 fn bash_unsafe(args: HashMap<String, Value>) -> Result<Vec<Content>> {
@@ -407,5 +413,11 @@ fn bash_unsafe(args: HashMap<String, Value>) -> Result<Vec<Content>> {
 fn render_bash_unsafe(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
-    Ok(format!("\x1b[1;31m$\x1b[0m {}", render::bat(command, &["-l", "bash"])))
+    let fmt = render::bat(command, &["-l", "bash"])
+        .lines()
+        .map(|l| format!("\x1b[1;31m$\x1b[0m {l}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    Ok(fmt)
 }
