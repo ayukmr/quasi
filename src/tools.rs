@@ -116,15 +116,15 @@ pub fn tools(renderer: Arc<Mutex<Renderer>>) -> Result<Vec<Tool>> {
             Box::new(render_bash),
         ),
         Tool::create(
-            "bash_write",
-            "Execute a bash command that needs write access. Use only for commands with side effects: builds, tests, installs, chmod, mv, mkdir. Never use this to create or change file contents in any way, use edit/write instead. Returns stdout and stderr.",
+            "bash_unsafe",
+            "Execute a bash command that needs write access. Use only for commands with side effects: builds, tests, installs, chmod, mv, mkdir. Never use to directly create or change file contents in any way, use edit/write instead. Returns stdout and stderr.",
             vec![
                 ("command", "string", "Bash command to execute"),
             ],
             vec!["command"],
             true,
-            Box::new(bash_write),
-            Box::new(render_bash_write),
+            Box::new(bash_unsafe),
+            Box::new(render_bash_unsafe),
         ),
     ];
 
@@ -394,7 +394,7 @@ fn render_bash(args: HashMap<String, Value>) -> Result<String> {
     Ok(format!("\x1b[1m$\x1b[0m {}", render::bat(command, &["-l", "bash"])))
 }
 
-fn bash_write(args: HashMap<String, Value>) -> Result<Vec<Content>> {
+fn bash_unsafe(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
     let output = Command::new("bash")
@@ -404,7 +404,7 @@ fn bash_write(args: HashMap<String, Value>) -> Result<Vec<Content>> {
     Ok(bash_helper(output))
 }
 
-fn render_bash_write(args: HashMap<String, Value>) -> Result<String> {
+fn render_bash_unsafe(args: HashMap<String, Value>) -> Result<String> {
     let command = args.get("command").context("command: omitted")?.as_str().context("command: wrong type")?;
 
     Ok(format!("\x1b[1;31m$\x1b[0m {}", render::bat(command, &["-l", "bash"])))
