@@ -70,7 +70,7 @@ fn main() -> Result<()> {
         let status = icons.join(" ");
 
         let readline = rl.readline(&format!(
-            "\x1b[35m✶\x1b[0m 𝓆𝓈𝒾 · {}{}\x1b[38;5;173m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (\x1b[31m↟\x1b[0m{}) \x1b[34m↓\x1b[0m{}\n\x1b[35m⟩\x1b[0m ",
+            "\x1b[35m✶\x1b[0m 𝓆𝓈𝒾 · {}{}\x1b[1m{}\x1b[0m ({}) · \x1b[31m↑\x1b[0m{} (\x1b[31m↟\x1b[0m{}) \x1b[34m↓\x1b[0m{}\n\x1b[35m⟩\x1b[0m ",
             if status.is_empty() { "".to_string() } else { format!("{status} · ") },
             agent.save.as_ref().map_or("".to_string(), |n| format!("{n} · ")),
             agent.model,
